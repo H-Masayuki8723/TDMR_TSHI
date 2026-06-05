@@ -1,0 +1,18 @@
+services:
+  sim:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tdmr2d:latest
+    working_dir: /app
+    environment:
+      - MPLBACKEND=Agg
+    volumes:
+      # Persist generated artifacts and codebook cache back to the host, and
+      # let config edits take effect without a rebuild.
+      - ./outputs:/app/outputs
+      - ./configs:/app/configs
+      - ./data:/app/data
+    # Default command; overridden by anything you append after the service name,
+    # e.g. `docker compose run --rm sim tdmr2d run configs/baseline_uncoded.yaml`.
+    command: ["tdmr2d", "smoke"]

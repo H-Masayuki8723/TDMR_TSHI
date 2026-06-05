@@ -1,0 +1,37 @@
+# Pattern B -- 1D / down-track MTR constrained baseline.
+# Each track is filled independently from a length-8 down-track codebook whose
+# words satisfy a max-transition-run (MTR) constraint. K1 info bits per 8-bit
+# block -> rate = K1/8. K1=7 gives rate 0.875 (matches the 2D K=14 rate for a
+# fair 1D-vs-2D comparison).
+experiment:
+  name: mtr1d_baseline
+  family: mtr1d
+  seed: 0
+  num_tracks: 64
+  bits_per_track: 4096
+
+code:
+  type: mtr1d
+  block_shape: [8, 2]
+  K1: 7            # info bits per length-8 down-track block -> rate 7/8 = 0.875
+  down_mtr: 3      # max down-track transition run (len-8, MTR<=3 -> 216 valid words)
+
+channel:
+  model: linear_2d_awgn
+  c0: 1.0
+  c_down_prev: 0.15
+  c_down_next: 0.15
+  c_cross_up: 0.10
+  c_cross_down: 0.10
+  snr_db: 14
+  boundary: zero
+
+detector:
+  type: hard_threshold
+  threshold: 0.0
+
+metrics:
+  target_ber: 1.0e-2
+
+output:
+  dir: outputs/runs

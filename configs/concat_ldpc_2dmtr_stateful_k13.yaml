@@ -1,0 +1,77 @@
+# Concatenated outer LDPC + stateful inner 2D-MTR 8x2 K13 trellis encoder.
+#
+# Flow:
+#   LDPC encode -> stateful K13 2D-MTR trellis encode ->
+#   2D TDMR channel -> matched stateful SISO trellis demapper <-> LDPC BP
+#
+# K=13 is the payload bits per 16-bit 2D block. The encoder draws channel words
+# from the larger K14 candidate codebook, but for each previous trellis boundary
+# state it exposes exactly 2^13 legal next words. This keeps the transmitter and
+# SISO demapper matched under:
+#
+#   boundary_down_mtr: 6
+#   boundary_max_checker_run: 1
+#
+#   tdmr2d concat configs/concat_ldpc_2dmtr_stateful_k13.yaml
+experiment:
+  name: concat_ldpc_2dmtr_stateful_k13
+  family: mtr2d_8x2
+  seed: 0
+  num_tracks: 40
+  bits_per_track: 208
+
+code:
+  type: mtr2d_8x2
+  block_shape: [8, 2]
+  K: 13
+  down_mtr: 3
+  max_checker_run: 0
+  inner_encoder: stateful_trellis
+  trellis_candidate_K: 14
+  boundary_down_mtr: 6
+  boundary_max_checker_run: 1
+
+channel:
+  model: linear_2d_awgn
+  c0: 1.0
+  c_down_prev: 0.15
+  c_down_next: 0.15
+  c_cross_up: 0.10
+  c_cross_down: 0.10
+  snr_db: 6
+  boundary: zero
+
+detector:
+  type: soft_awgn
+  threshold: 0.0
+  llr_clip: 20.0
+
+metrics:
+  target_ber: 1.0e-2
+
+output:
+  dir: outputs/runs
+
+ldpc:
+  n: 168
+  dv: 3
+  dc: 6
+  construction_seed: 1
+  method: minsum
+  scale: 0.75
+  max_iters: 30
+  num_frames: 40
+  inner_demapper: stateful_trellis
+  turbo_iterations: 2
+  turbo_llr_clip: 20.0
+  turbo_damping: 0.0
+  demapper_chunk: 64
+
+boundary_scan:
+  boundary_down_mtr: [5, 6, 7]
+  boundary_max_checker_run: [0, 1]
+  num_trials: 4
+
+sweep:
+  snr_db: [4, 5, 6, 7, 8]
+  iti_coeffs: [0.0, 0.2]

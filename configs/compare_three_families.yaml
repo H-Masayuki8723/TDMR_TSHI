@@ -1,0 +1,52 @@
+# 3-family comparison over one shared SNR x ITI grid.
+# Runs Pattern A (uncoded), B (1D-MTR, rate 0.875) and C (2D-MTR 8x2, rate 0.875)
+# under identical channel conditions and seed, then overlays them by family:
+#   compare_ber_vs_snr.png  -- BER vs SNR at ITI = slice_iti
+#   compare_ber_vs_iti.png  -- BER vs ITI at SNR = slice_snr_db
+#
+#   tdmr2d compare configs/compare_three_families.yaml
+experiment:
+  name: compare_three_families
+  family: uncoded          # placeholder; overridden per compare.families entry
+  seed: 0
+  num_tracks: 64
+  bits_per_track: 4096
+
+code:
+  type: uncoded            # placeholder; overridden per family
+  block_shape: [8, 2]
+
+channel:
+  model: linear_2d_awgn
+  c0: 1.0
+  c_down_prev: 0.15
+  c_down_next: 0.15
+  c_cross_up: 0.10
+  c_cross_down: 0.10
+  snr_db: 14
+  boundary: zero
+
+detector:
+  type: hard_threshold
+  threshold: 0.0
+
+metrics:
+  target_ber: 1.0e-2
+
+output:
+  dir: outputs/runs
+
+sweep:
+  snr_db: [8, 10, 12, 14, 16, 18, 20]
+  iti_coeffs: [0.00, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30]
+
+compare:
+  families:
+    - family: uncoded
+      code: { type: uncoded }
+    - family: mtr1d
+      code: { type: mtr1d, K1: 7, down_mtr: 3 }
+    - family: mtr2d_8x2
+      code: { type: mtr2d_8x2, K: 14, down_mtr: 3, max_checker_run: 0 }
+  slice_snr_db: 14         # fixed SNR for the BER-vs-ITI overlay
+  slice_iti: 0.10          # fixed ITI for the BER-vs-SNR overlay

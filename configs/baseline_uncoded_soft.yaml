@@ -1,0 +1,41 @@
+# Stage-2 demo: soft-decision detector (LLR generation) + null decoder.
+# Same uncoded channel as baseline_uncoded.yaml, but detector.type = soft_awgn,
+# which additionally emits per-bit LLRs. The 'null' decoder hard-decides the LLR
+# sign (no error correction), so post_decode_BER == pre-ECC BER -- a consistency
+# check that the soft pipeline is wired correctly. Replace decoder.type with a
+# real LDPC decoder (stage 2) to obtain post-ECC gains.
+experiment:
+  name: uncoded_soft_demo
+  family: uncoded
+  seed: 0
+  num_tracks: 64
+  bits_per_track: 4096
+
+code:
+  type: uncoded
+  block_shape: [8, 2]
+
+channel:
+  model: linear_2d_awgn
+  c0: 1.0
+  c_down_prev: 0.15
+  c_down_next: 0.15
+  c_cross_up: 0.10
+  c_cross_down: 0.10
+  snr_db: 12          # lower SNR so LLR magnitudes/errors are visible
+  boundary: zero
+
+detector:
+  type: soft_awgn     # hard decision + LLR generation
+  threshold: 0.0
+  llr_clip: 20.0
+
+decoder:
+  type: hard          # no-op placeholder (hard-decides LLR); requires soft_awgn
+  params: {}
+
+metrics:
+  target_ber: 1.0e-2
+
+output:
+  dir: outputs/runs

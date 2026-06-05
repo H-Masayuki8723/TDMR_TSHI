@@ -1,0 +1,13 @@
+.git
+.gitignore
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+outputs/runs/*
+outputs/summaries/*
+outputs/figures/*
+outputs/reports/*
+data/codebooks/*.npz
+data/codebooks/*.json
+*.egg-info/
+.venv/

@@ -1,0 +1,32 @@
+# Pattern A -- Uncoded baseline (rate 1.0).
+# Random user bits, no 2D coding. Establishes the reference pre-ECC BER curve.
+experiment:
+  name: uncoded_baseline
+  family: uncoded
+  seed: 0
+  num_tracks: 64
+  bits_per_track: 4096
+
+code:
+  type: uncoded
+  block_shape: [8, 2]   # [down_track, cross_track]; used only for block-error tiling
+
+channel:
+  model: linear_2d_awgn
+  c0: 1.0
+  c_down_prev: 0.15
+  c_down_next: 0.15
+  c_cross_up: 0.10
+  c_cross_down: 0.10
+  snr_db: 14
+  boundary: zero        # zero | periodic | edge
+
+detector:
+  type: hard_threshold
+  threshold: 0.0
+
+metrics:
+  target_ber: 1.0e-2
+
+output:
+  dir: outputs/runs

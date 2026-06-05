@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# Package metadata (name, deps, console script) lives in setup.cfg so the project
+# builds on any setuptools >= 45 -- including older toolchains that predate PEP
+# 621 [project] support. The runtime intentionally avoids pydantic/typer: config
+# validation uses stdlib dataclasses and the CLI uses stdlib argparse (the spec
+# allows either choice), keeping installs light and reproducible.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

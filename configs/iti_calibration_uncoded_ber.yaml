@@ -1,0 +1,47 @@
+# ITI calibration by a measurable reference BER.
+#
+# Use this before comparing 1D/2D nominal ITI coefficients. The selected
+# coefficient is the one whose uncoded pre-ECC BER is closest to target_ber at
+# each SNR.
+#
+# Run:
+#   tdmr2d iti-calibrate configs/iti_calibration_uncoded_ber.yaml
+experiment:
+  name: iti_calibration_uncoded_ber
+  family: uncoded
+  seed: 0
+  num_tracks: 64
+  bits_per_track: 4096
+
+code:
+  type: uncoded
+  block_shape: [8, 2]
+
+channel:
+  model: linear_2d_awgn
+  c0: 1.0
+  c_down_prev: 0.15
+  c_down_next: 0.15
+  c_cross_up: 0.10
+  c_cross_down: 0.10
+  snr_db: 14
+  boundary: zero
+
+detector:
+  type: hard_threshold
+  threshold: 0.0
+
+metrics:
+  target_ber: 1.0e-2
+
+output:
+  dir: outputs/runs
+
+iti_calibration:
+  target_ber: 1.0e-2
+  snr_db: [10, 12, 14, 16]
+  iti_coeffs: [0.00, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30]
+  families:
+    - label: uncoded_reference
+      family: uncoded
+      code: {type: uncoded}

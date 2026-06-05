@@ -1,0 +1,50 @@
+# LDPC post-ECC BER/FER over the 2D TDMR channel (stage 2, real BP decoder).
+# One regular (dv,dc) Gallager codeword per track; the soft_awgn detector feeds
+# per-bit LLRs to the normalized min-sum decoder. Reports post-ECC information
+# BER (BER column), frame/message error rate (block_error_rate = FER), and the
+# pre-ECC channel BER for reference.
+#
+#   tdmr2d ldpc configs/ldpc_eval.yaml
+experiment:
+  name: ldpc_eval
+  family: uncoded        # LDPC is the ECC layer; modulation layer is uncoded here
+  seed: 0
+
+code:
+  type: uncoded
+  block_shape: [8, 2]
+
+channel:
+  model: linear_2d_awgn
+  c0: 1.0
+  c_down_prev: 0.15
+  c_down_next: 0.15
+  c_cross_up: 0.10       # overridden per sweep ITI point
+  c_cross_down: 0.10
+  snr_db: 8
+  boundary: zero
+
+detector:
+  type: soft_awgn        # required: LDPC needs LLRs
+  threshold: 0.0
+  llr_clip: 20.0
+
+metrics:
+  target_ber: 1.0e-2
+
+output:
+  dir: outputs/runs
+
+ldpc:
+  n: 300                 # codeword length (must be divisible by dc)
+  dv: 3                  # column weight
+  dc: 6                  # row weight -> design rate 1 - dv/dc = 0.5
+  construction_seed: 1
+  method: minsum         # minsum | sumproduct
+  scale: 0.75            # normalized min-sum scaling
+  max_iters: 30
+  num_frames: 200        # codewords per operating point (= tracks in the grid)
+
+sweep:
+  snr_db: [3, 4, 5, 6, 7, 8, 9]
+  iti_coeffs: [0.0, 0.2]

@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+build/
+dist/
+
+# Generated run artifacts (keep the directory skeleton via .gitkeep)
+outputs/runs/*
+outputs/summaries/*
+outputs/figures/*
+outputs/reports/*
+!outputs/**/.gitkeep
+
+# Generated codebook cache (rebuilt deterministically on demand)
+data/codebooks/*.npz
+data/codebooks/*.json
+!data/codebooks/.gitkeep
+.DS_Store

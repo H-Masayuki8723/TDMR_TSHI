@@ -1,0 +1,44 @@
+# Pattern C -- 2D-MTR / TDMR-oriented 8x2 constrained code.
+# Each 8x2 block (2 tracks x 8 down-track bits = 16 cells) is drawn from a 2D
+# codebook: down-track MTR per track PLUS a cross-track rule forbidding 2x2
+# checkerboard runs (the ITI-worst pattern). K info bits per 16-bit block ->
+# rate = K/16.
+#
+#   K=14, down_mtr=3, max_checker_run=0  -> rate 0.875  (22818 valid words; default)
+#   K=15, down_mtr=3, max_checker_run=1  -> rate 0.9375 (42388 valid words; relaxed 2D)
+#
+# To attach an external (e.g. hand-designed) K14/K15 codebook, drop a matching
+# .npz under data/codebooks/ -- it is loaded automatically by name.
+experiment:
+  name: mtr2d_8x2_baseline
+  family: mtr2d_8x2
+  seed: 0
+  num_tracks: 64
+  bits_per_track: 4096
+
+code:
+  type: mtr2d_8x2
+  block_shape: [8, 2]
+  K: 14              # info bits per 8x2 (16-bit) block -> rate 14/16 = 0.875
+  down_mtr: 3        # max down-track transition run per track
+  max_checker_run: 0 # 0 = forbid any 2x2 checkerboard (strict 2D); 1 = allow isolated
+
+channel:
+  model: linear_2d_awgn
+  c0: 1.0
+  c_down_prev: 0.15
+  c_down_next: 0.15
+  c_cross_up: 0.10
+  c_cross_down: 0.10
+  snr_db: 14
+  boundary: zero
+
+detector:
+  type: hard_threshold
+  threshold: 0.0
+
+metrics:
+  target_ber: 1.0e-2
+
+output:
+  dir: outputs/runs

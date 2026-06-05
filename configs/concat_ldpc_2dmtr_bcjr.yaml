@@ -1,0 +1,68 @@
+# Concatenated outer LDPC + inner 2D-MTR 8x2 with a BCJR/2D-equalized channel SISO.
+#
+# Flow:
+#   LDPC encode -> 2D-MTR 8x2 codebook encode -> 2D TDMR channel ->
+#   soft ITI cancellation + down-track BCJR ISI detector ->
+#   exact SISO codebook demapper <-> LDPC BP decoder
+#
+# `channel_detector: bcjr_2d_equalized` replaces the simple main-tap AWGN LLR
+# with a channel-aware LLR. `equalizer_iterations` controls soft cross-track
+# cancellation passes before the channel LLRs are given to the codebook demapper.
+#
+#   tdmr2d concat configs/concat_ldpc_2dmtr_bcjr.yaml
+experiment:
+  name: concat_ldpc_2dmtr_bcjr
+  family: mtr2d_8x2
+  seed: 0
+  num_tracks: 40
+  bits_per_track: 168
+
+code:
+  type: mtr2d_8x2
+  block_shape: [8, 2]
+  K: 14
+  down_mtr: 3
+  max_checker_run: 0
+
+channel:
+  model: linear_2d_awgn
+  c0: 1.0
+  c_down_prev: 0.15
+  c_down_next: 0.15
+  c_cross_up: 0.10
+  c_cross_down: 0.10
+  snr_db: 6
+  boundary: zero
+
+detector:
+  type: soft_awgn
+  threshold: 0.0
+  llr_clip: 20.0
+
+metrics:
+  target_ber: 1.0e-2
+
+output:
+  dir: outputs/runs
+
+ldpc:
+  inner_demapper: trellis_pruned
+  n: 168
+  dv: 3
+  dc: 6
+  construction_seed: 1
+  method: minsum
+  scale: 0.75
+  max_iters: 30
+  num_frames: 40
+  channel_detector: bcjr_2d_equalized
+  equalizer_iterations: 2
+  channel_llr_clip: 30.0
+  turbo_iterations: 2
+  turbo_llr_clip: 20.0
+  turbo_damping: 0.0
+  demapper_chunk: 64
+
+sweep:
+  snr_db: [4, 5, 6, 7, 8]
+  iti_coeffs: [0.0, 0.2]
