@@ -11,6 +11,7 @@ Commands:
 * ``tdmr2d boundary-scan CONFIG``-- scan trellis-boundary pruning candidates
 * ``tdmr2d rate-plan CONFIG``    -- plan high-rate 4KB-sector LDPC geometry
 * ``tdmr2d iti-calibrate CONFIG``-- scan ITI coefficients against a BER target
+* ``tdmr2d fsr-extrapolate SRC`` -- aggregate sector chunks and extrapolate target FSR SNR
 * ``tdmr2d summarize OUTPUT_DIR``-- aggregate runs into one summary CSV
 
 argparse is used (the spec allows Typer *or* argparse) to keep the runtime
@@ -32,6 +33,8 @@ from .config import Config
 from .experiments import (run_boundary_scan, run_compare, run_concatenated,
                           run_iti_calibration, run_ldpc, run_rate_plan,
                           run_single, run_sweep)
+from .fsr import (aggregate_fsr, extrapolate_fsr_targets, load_fsr_rows,
+                  parse_column_list, parse_float_list, plot_fsr_extrapolation)
 from .io import (ensure_output_tree, make_run_dir, rows_to_frame, save_csv,
                  save_json, setup_logger, timestamp, REQUIRED_COLUMNS)
 from .reports import (build_summary, plot_ber_vs_iti, plot_ber_vs_snr,
@@ -449,6 +452,51 @@ def cmd_iti_calibrate(args) -> int:
     return 0
 
 
+def cmd_fsr_extrapolate(args) -> int:
+    targets = parse_float_list(args.targets)
+    group_cols = parse_column_list(args.group_by)
+    rows = load_fsr_rows(args.sources, name_filter=args.name_filter)
+    if rows.empty:
+        print("No sector-FSR rows found. Pass outputs/runs, a results.csv, or an aggregate CSV.")
+        return 1
+    group_cols = [c for c in group_cols if c in rows.columns]
+    agg = aggregate_fsr(rows, group_cols)
+    target_df, fit_points = extrapolate_fsr_targets(
+        agg, group_cols, targets,
+        max_fit_fsr=float(args.max_fit_fsr),
+        min_fit_fsr=float(args.min_fit_fsr),
+        min_points=int(args.min_points),
+    )
+
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    prefix = args.prefix or f"fsr_extrapolation_{timestamp()}"
+    agg_path = out_dir / f"{prefix}_aggregate.csv"
+    fit_path = out_dir / f"{prefix}_fit_points.csv"
+    target_path = out_dir / f"{prefix}_target_snr.csv"
+    agg.to_csv(agg_path, index=False)
+    fit_points.to_csv(fit_path, index=False)
+    target_df.to_csv(target_path, index=False)
+    plot_path = None
+    if not args.no_plot and not target_df.empty:
+        plot_path = plot_fsr_extrapolation(agg, target_df, group_cols, out_dir / f"{prefix}.png")
+
+    print(f"\nFSR extrapolation from {len(rows)} raw row(s)")
+    print(f"  aggregate: {agg_path}")
+    print(f"  fit points: {fit_path}")
+    print(f"  target SNR: {target_path}")
+    if plot_path is not None:
+        print(f"  plot: {plot_path}")
+    sort_cols = group_cols + ["target_fsr"] if group_cols else ["target_fsr"]
+    for _, r in target_df.sort_values(sort_cols).iterrows():
+        group = " ".join(f"{c}={r[c]}" for c in group_cols if c in r)
+        est = r["estimated_snr_db"]
+        est_s = "nan" if pd.isna(est) else f"{est:.3f} dB"
+        note = "" if not r.get("fit_note") else f"  note={r['fit_note']}"
+        print(f"  {group} target={r['target_fsr']:.1e} estimated_snr={est_s}{note}")
+    return 0
+
+
 def cmd_summarize(args) -> int:
     df = build_summary([args.output_dir])
     if df.empty:
@@ -524,6 +572,25 @@ def build_parser() -> argparse.ArgumentParser:
     ic.add_argument("config")
     ic.add_argument("--cache-dir", default="data/codebooks")
     ic.set_defaults(func=cmd_iti_calibrate)
+
+    fe = sub.add_parser("fsr-extrapolate", help="aggregate sector chunks and extrapolate target FSR SNR")
+    fe.add_argument("sources", nargs="+", help="outputs/runs directory, results.csv, or aggregate CSV")
+    fe.add_argument("--targets", default="1e-8,1e-9,1e-10",
+                    help="comma-separated target FSR values")
+    fe.add_argument("--group-by", default="iti_coeff",
+                    help="comma-separated columns to fit separately, e.g. family,rate,iti_coeff")
+    fe.add_argument("--name-filter", default=None,
+                    help="only use rows whose name column contains this text")
+    fe.add_argument("--max-fit-fsr", type=float, default=0.8,
+                    help="exclude saturated points with FSR >= this value from the fit")
+    fe.add_argument("--min-fit-fsr", type=float, default=0.0,
+                    help="exclude points with FSR <= this value from the fit")
+    fe.add_argument("--min-points", type=int, default=2,
+                    help="minimum nonzero/non-saturated points required for a fit")
+    fe.add_argument("--out-dir", default="outputs/summaries")
+    fe.add_argument("--prefix", default=None)
+    fe.add_argument("--no-plot", action="store_true")
+    fe.set_defaults(func=cmd_fsr_extrapolate)
 
     m = sub.add_parser("summarize", help="aggregate runs into one summary CSV")
     m.add_argument("output_dir")
