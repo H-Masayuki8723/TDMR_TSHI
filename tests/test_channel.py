@@ -2,7 +2,9 @@
 
 import numpy as np
 
-from tdmr2d.channel import ChannelTaps, map_bits_to_symbols, readback, snr_db_to_sigma
+from tdmr2d.channel import (ChannelTaps, effective_interference_metrics,
+                            map_bits_to_symbols, readback, snr_db_to_sigma,
+                            tap_energy_metrics)
 
 
 def test_no_noise_no_interference_identity():
@@ -56,3 +58,28 @@ def test_snr_to_sigma_convention():
     # sigma^2 = c0^2 * 10^(-snr/10)
     assert np.isclose(snr_db_to_sigma(10.0, 1.0) ** 2, 10 ** (-1.0))
     assert np.isclose(snr_db_to_sigma(20.0, 2.0) ** 2, (2.0 ** 2) * 10 ** (-2.0))
+
+
+def test_tap_energy_metrics_split_down_and_cross_terms():
+    taps = ChannelTaps(c0=1.0, c_down_prev=0.15, c_down_next=0.15,
+                       c_cross_up=0.2, c_cross_down=0.2)
+    m = tap_energy_metrics(taps, sigma=0.1)
+
+    assert np.isclose(m["tap_downtrack_energy"], 0.15 ** 2 + 0.15 ** 2)
+    assert np.isclose(m["tap_crosstrack_energy"], 0.2 ** 2 + 0.2 ** 2)
+    assert np.isclose(m["awgn_variance"], 0.01)
+    assert m["tap_sir_db"] < 10.0
+    assert m["tap_sinr_db"] < m["tap_sir_db"]
+
+
+def test_effective_interference_metrics_handles_zero_interference():
+    x = np.array([[+1.0, -1.0, +1.0, -1.0],
+                  [-1.0, +1.0, -1.0, +1.0]])
+    taps = ChannelTaps(c0=1.0, c_down_prev=0.0, c_down_next=0.0,
+                       c_cross_up=0.0, c_cross_down=0.0)
+    m = effective_interference_metrics(x, taps, boundary="zero", sigma=0.0, chunk_tracks=1)
+
+    assert m["effective_sample_count"] == x.size
+    assert m["effective_interference_variance"] == 0.0
+    assert m["effective_sir_db"] is None
+    assert np.isclose(m["effective_main_variance"], 1.0)

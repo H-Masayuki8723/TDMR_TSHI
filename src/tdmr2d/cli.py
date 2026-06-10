@@ -11,6 +11,7 @@ Commands:
 * ``tdmr2d boundary-scan CONFIG``-- scan trellis-boundary pruning candidates
 * ``tdmr2d rate-plan CONFIG``    -- plan high-rate 4KB-sector LDPC geometry
 * ``tdmr2d iti-calibrate CONFIG``-- scan ITI coefficients against a BER target
+* ``tdmr2d channel-metrics CONFIG`` -- record tap/effective ITI comparison metrics
 * ``tdmr2d fsr-extrapolate SRC`` -- aggregate sector chunks and extrapolate target FSR SNR
 * ``tdmr2d summarize OUTPUT_DIR``-- aggregate runs into one summary CSV
 
@@ -30,9 +31,9 @@ import yaml
 
 from . import __version__
 from .config import Config
-from .experiments import (run_boundary_scan, run_compare, run_concatenated,
-                          run_iti_calibration, run_ldpc, run_rate_plan,
-                          run_single, run_sweep)
+from .experiments import (run_boundary_scan, run_channel_metrics, run_compare,
+                          run_concatenated, run_iti_calibration, run_ldpc,
+                          run_rate_plan, run_single, run_sweep)
 from .fsr import (aggregate_fsr, extrapolate_fsr_targets, load_fsr_rows,
                   parse_column_list, parse_float_list, plot_fsr_extrapolation)
 from .io import (ensure_output_tree, make_run_dir, rows_to_frame, save_csv,
@@ -52,7 +53,9 @@ def _ensure_siblings(output_dir: str) -> None:
     ensure_output_tree(root)
 
 
-_EXTRA_ROOT_SECTIONS = {"ldpc", "boundary_scan", "iti_calibration", "rate_plan"}
+_EXTRA_ROOT_SECTIONS = {
+    "ldpc", "boundary_scan", "iti_calibration", "rate_plan", "channel_metrics",
+}
 
 
 def _parse_int_values(spec, default: List[int]) -> List[int]:
@@ -452,6 +455,47 @@ def cmd_iti_calibrate(args) -> int:
     return 0
 
 
+def cmd_channel_metrics(args) -> int:
+    with open(args.config, "r") as fh:
+        raw = yaml.safe_load(fh) or {}
+    out_dir = raw.get("output", {}).get("dir", "outputs/runs")
+    _ensure_siblings(out_dir)
+    run_dir = make_run_dir(out_dir)
+    logger = setup_logger("tdmr2d.channel_metrics", run_dir / "run.log")
+    logger.info("channel metrics config %s -> %s", args.config, run_dir)
+    with open(run_dir / "config.resolved.yaml", "w") as fh:
+        yaml.safe_dump(raw, fh, sort_keys=False)
+
+    rows, meta = run_channel_metrics(
+        raw, cache_dir=args.cache_dir,
+        sample_frames=args.sample_frames,
+        chunk_tracks=args.chunk_tracks,
+        logger=logger,
+    )
+    csv_path = save_csv(rows, run_dir / "channel_metrics.csv")
+    save_json({"config": raw, "channel_metrics": meta, "results": rows},
+              run_dir / "channel_metrics.json")
+
+    print(f"\nChannel metrics {len(rows)} point(s) -> {run_dir}")
+    print(
+        f"  family={meta['family']} rate={meta['rate']:.5f} "
+        f"sample={meta['sample_num_tracks']}x{meta['sample_bits_per_track']} "
+        f"({meta['sample_num_bits']} channel bits)"
+    )
+    for r in sorted(rows, key=lambda x: (x["iti_coeff"], str(x["snr_db"]))):
+        tap = r.get("tap_sir_db")
+        eff = r.get("effective_sir_db")
+        tap_s = "n/a" if tap is None else f"{tap:.3f} dB"
+        eff_s = "n/a" if eff is None else f"{eff:.3f} dB"
+        print(
+            f"  snr={r['snr_db']} iti={r['iti_coeff']:.3f} "
+            f"tap_SIR={tap_s} effective_SIR={eff_s} "
+            f"cross_var_fraction={r.get('effective_cross_fraction_of_interference_variance')}"
+        )
+    print(f"  files: {csv_path.name} / channel_metrics.json / run.log")
+    return 0
+
+
 def cmd_fsr_extrapolate(args) -> int:
     targets = parse_float_list(args.targets)
     group_cols = parse_column_list(args.group_by)
@@ -572,6 +616,16 @@ def build_parser() -> argparse.ArgumentParser:
     ic.add_argument("config")
     ic.add_argument("--cache-dir", default="data/codebooks")
     ic.set_defaults(func=cmd_iti_calibrate)
+
+    cm = sub.add_parser("channel-metrics",
+                        help="measure tap and sequence-dependent channel interference metrics")
+    cm.add_argument("config")
+    cm.add_argument("--cache-dir", default="data/codebooks")
+    cm.add_argument("--sample-frames", type=int, default=None,
+                    help="LDPC frames to sample when the config has an ldpc section")
+    cm.add_argument("--chunk-tracks", type=int, default=256,
+                    help="track chunk size for effective interference accumulation")
+    cm.set_defaults(func=cmd_channel_metrics)
 
     fe = sub.add_parser("fsr-extrapolate", help="aggregate sector chunks and extrapolate target FSR SNR")
     fe.add_argument("sources", nargs="+", help="outputs/runs directory, results.csv, or aggregate CSV")

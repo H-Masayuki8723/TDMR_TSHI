@@ -8,8 +8,9 @@ from tdmr2d.concat import (decode_inner_llr, encode_inner_grid, indices_to_bits,
                            soft_demapper_llr, trellis_pruned_demapper_llr,
                            trellis_pruned_viterbi_indices)
 from tdmr2d.config import Config
-from tdmr2d.experiments import (run_boundary_scan, run_concatenated,
-                                run_iti_calibration, run_rate_plan)
+from tdmr2d.experiments import (run_boundary_scan, run_channel_metrics,
+                                run_concatenated, run_iti_calibration,
+                                run_rate_plan)
 
 
 def _cfg() -> Config:
@@ -297,6 +298,56 @@ def test_rate_plan_estimates_k15_high_rate_without_running_channel(tmp_path):
     assert abs(rows[0]["inner_rate"] - 15 / 16) < 1e-12
     assert abs(rows[0]["design_total_rate"] - 0.9) < 1e-12
     assert rows[0]["recommended_num_frames"] % 2 == 0
+
+
+def test_rate_plan_accepts_1dmtr_k15_high_rate_baseline(tmp_path):
+    raw = _cfg().to_dict()
+    raw["experiment"].update({"family": "mtr1d"})
+    raw["code"] = {
+        "type": "mtr1d",
+        "block_shape": [16, 1],
+        "K1": 15,
+        "down_mtr": 3,
+        "boundary_down_mtr": 8,
+        "boundary_max_checker_run": 8,
+    }
+    raw["ldpc"] = {
+        "n": 1800,
+        "dv": 3,
+        "dc": 75,
+        "sector_bits": 32768,
+        "sector_count_target": 10,
+    }
+    raw["rate_plan"] = {
+        "target_total_rate": 0.90,
+        "sector_bits": 32768,
+        "sector_count_target": 10,
+        "check_codebook": True,
+    }
+
+    rows, meta = run_rate_plan(raw, cache_dir=tmp_path)
+
+    assert abs(meta["inner_rate"] - 15 / 16) < 1e-12
+    assert rows[0]["codebook_status"] == "ok"
+    assert rows[0]["codebook_num_valid"] >= 2 ** 15
+    assert abs(rows[0]["design_total_rate"] - 0.9) < 1e-12
+
+
+def test_channel_metrics_reports_effective_interference_for_ldpc_inner_grid(tmp_path):
+    raw = _cfg().to_dict()
+    raw["experiment"]["name"] = "channel_metrics_test"
+    raw["channel"].update({"c_cross_up": 0.2, "c_cross_down": 0.2, "snr_db": 12.0})
+    raw["ldpc"] = {"n": 60, "dv": 3, "dc": 6, "construction_seed": 1}
+    raw["channel_metrics"] = {"use_ldpc_inner_grid": True, "sample_frames": 4, "chunk_tracks": 2}
+    raw["sweep"] = {"snr_db": [12.0], "iti_coeffs": [0.0, 0.2]}
+
+    rows, meta = run_channel_metrics(raw, cache_dir=tmp_path, chunk_tracks=2)
+
+    assert len(rows) == 2
+    assert meta["use_ldpc_inner_grid"] is True
+    assert rows[0]["tap_crosstrack_energy"] == 0.0
+    assert rows[1]["tap_crosstrack_energy"] > 0.0
+    assert "effective_interference_variance" in rows[1]
 
 
 def test_iti_calibration_marks_one_best_per_snr(tmp_path):

@@ -159,7 +159,8 @@ def run_rate_plan(raw: Dict, *, cache_dir: str = "data/codebooks") -> Tuple[List
     params = raw.get("rate_plan", {}) or {}
     ldpc_params = raw.get("ldpc", {}) or {}
     base = {k: copy.deepcopy(v) for k, v in raw.items()
-            if k not in {"ldpc", "boundary_scan", "iti_calibration", "rate_plan"}}
+            if k not in {"ldpc", "boundary_scan", "iti_calibration",
+                         "rate_plan", "channel_metrics"}}
     cfg = Config.from_dict(base)
 
     target_total = float(params.get("target_total_rate", ldpc_params.get("target_total_rate", 0.90)))
@@ -267,7 +268,8 @@ def run_iti_calibration(raw: Dict, *, cache_dir: str = "data/codebooks",
     """
     params = raw.get("iti_calibration", {}) or {}
     base = {k: copy.deepcopy(v) for k, v in raw.items()
-            if k not in {"compare", "ldpc", "boundary_scan", "iti_calibration", "rate_plan"}}
+            if k not in {"compare", "ldpc", "boundary_scan", "iti_calibration",
+                         "rate_plan", "channel_metrics"}}
     target = float(params.get("target_ber", raw.get("metrics", {}).get("target_ber", 1.0e-2)))
     if target <= 0:
         raise ValueError("iti_calibration.target_ber must be positive")
@@ -340,6 +342,120 @@ def run_iti_calibration(raw: Dict, *, cache_dir: str = "data/codebooks",
         "families": [entry.get("label", entry["family"]) for entry in families],
     }
     return all_rows, best_rows, meta
+
+
+def run_channel_metrics(raw: Dict, *, cache_dir: str = "data/codebooks",
+                        sample_frames: Optional[int] = None,
+                        chunk_tracks: int = 256,
+                        logger=None) -> Tuple[List[Dict], Dict]:
+    """Measure nominal/effective channel interference for a configured signal.
+
+    This is deliberately separated from heavy BER/FSR runs. It records the
+    physical-ish comparison columns needed for Level-3 1D/2D discussions without
+    adding large intermediate arrays to the production concatenated decoder path.
+    """
+    params = raw.get("channel_metrics", {}) or {}
+    ldpc_params = raw.get("ldpc", {}) or {}
+    base = {k: copy.deepcopy(v) for k, v in raw.items()
+            if k not in {"compare", "ldpc", "boundary_scan", "iti_calibration",
+                         "rate_plan", "channel_metrics"}}
+    cfg = Config.from_dict(base)
+    rng = np.random.default_rng(int(params.get("seed", cfg.experiment.seed)))
+
+    use_ldpc_inner = bool(params.get(
+        "use_ldpc_inner_grid",
+        bool(ldpc_params) and cfg.experiment.family in {"uncoded", "mtr1d", "mtr2d_8x2"},
+    ))
+    chunk = int(params.get("chunk_tracks", chunk_tracks))
+
+    signal_meta: Dict = {}
+    if use_ldpc_inner:
+        code = LDPCCode.gallager(
+            n=int(ldpc_params.get("n", 1800)),
+            dv=int(ldpc_params.get("dv", 3)),
+            dc=int(ldpc_params.get("dc", 75)),
+            seed=int(ldpc_params.get("construction_seed", 1)),
+        )
+        default_frames = int(params.get("sample_frames", 256))
+        frames = int(sample_frames if sample_frames is not None else default_frames)
+        frames = _round_up_multiple(max(1, frames), _frame_multiple_for_inner(cfg))
+        U = rng.integers(0, 2, size=(frames, code.k), dtype=np.uint8)
+        C = code.encode(U)
+        tx_grid, inner_meta = concat_mod.encode_inner_grid(C, cfg, cache_dir=cache_dir)
+        signal_rate = float(code.rate * inner_meta["inner_rate"])
+        signal_family = f"ldpc+{cfg.experiment.family}"
+        signal_meta.update({
+            "use_ldpc_inner_grid": True,
+            "outer_ldpc_n": code.n,
+            "outer_ldpc_k": code.k,
+            "outer_ldpc_rate": float(code.rate),
+            "sample_frames": frames,
+        })
+        signal_meta.update({k: v for k, v in inner_meta.items() if k not in signal_meta})
+    else:
+        tracks = int(params.get("sample_tracks", cfg.experiment.num_tracks))
+        bits_per_track = int(params.get("sample_bits_per_track", cfg.experiment.bits_per_track))
+        sample_cfg = replace(
+            cfg,
+            experiment=replace(cfg.experiment, num_tracks=tracks, bits_per_track=bits_per_track),
+        )
+        tx_grid, signal_rate, code_meta = build_tx_grid(sample_cfg, rng, cache_dir=cache_dir)
+        signal_family = cfg.experiment.family
+        signal_meta.update({
+            "use_ldpc_inner_grid": False,
+            "sample_frames": None,
+            "inner_code": code_meta.get("code"),
+            "inner_rate": float(signal_rate),
+        })
+
+    symbols = channel_mod.map_bits_to_symbols(tx_grid)
+    snrs = list(cfg.sweep.snr_db) if cfg.sweep and cfg.sweep.snr_db else [cfg.channel.snr_db]
+    itis = list(cfg.sweep.iti_coeffs) if cfg.sweep and cfg.sweep.iti_coeffs else [cfg.channel.c_cross_up]
+    rows: List[Dict] = []
+    for snr in snrs:
+        for iti in itis:
+            ch = replace(cfg.channel, c_cross_up=float(iti), c_cross_down=float(iti))
+            taps = channel_mod.ChannelTaps.from_config(ch)
+            sigma = channel_mod.snr_db_to_sigma(snr, ch.c0)
+            row: Dict = {
+                "name": cfg.experiment.name,
+                "family": signal_family,
+                "rate": signal_rate,
+                "snr_db": snr,
+                "iti_coeff": float(iti),
+                "sample_num_bits": int(tx_grid.size),
+                "sample_num_tracks": int(tx_grid.shape[0]),
+                "sample_bits_per_track": int(tx_grid.shape[1]),
+                "seed": cfg.experiment.seed,
+                "boundary": ch.boundary,
+                "channel_metric_type": "tap_and_effective_sequence_interference",
+                "channel_metrics_chunk_tracks": chunk,
+            }
+            row.update(signal_meta)
+            row.update(channel_mod.tap_energy_metrics(taps, sigma=sigma))
+            row.update(channel_mod.effective_interference_metrics(
+                symbols, taps, boundary=ch.boundary, sigma=sigma, chunk_tracks=chunk,
+            ))
+            rows.append(row)
+            if logger is not None:
+                logger.info(
+                    "channel metrics family=%s rate=%.4f snr=%s iti=%.3f "
+                    "eff_SIR=%s tap_SIR=%s sample_bits=%d",
+                    signal_family, signal_rate, str(snr), float(iti),
+                    row.get("effective_sir_db"), row.get("tap_sir_db"), tx_grid.size,
+                )
+
+    meta = {
+        "name": cfg.experiment.name,
+        "family": signal_family,
+        "rate": signal_rate,
+        "sample_num_bits": int(tx_grid.size),
+        "sample_num_tracks": int(tx_grid.shape[0]),
+        "sample_bits_per_track": int(tx_grid.shape[1]),
+        "chunk_tracks": chunk,
+    }
+    meta.update(signal_meta)
+    return rows, meta
 
 
 # --------------------------------------------------------------------------- #
@@ -528,7 +644,9 @@ def run_compare(raw: Dict, *, cache_dir: str = "data/codebooks",
     if "sweep" not in raw:
         raise ValueError("compare config requires a 'sweep' grid")
 
-    base = {k: v for k, v in raw.items() if k != "compare"}
+    base = {k: copy.deepcopy(v) for k, v in raw.items()
+            if k not in {"compare", "ldpc", "boundary_scan", "iti_calibration",
+                         "rate_plan", "channel_metrics"}}
     base_name = base.get("experiment", {}).get("name", "compare")
 
     all_rows: List[Dict] = []
