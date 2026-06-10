@@ -1,0 +1,76 @@
+# Tail refinement for the high-rate 1D-MTR K15 baseline, nominal ITI=0.2.
+#
+# The first coarse scan had one usable nonzero/non-saturated FSR point at 22 dB
+# and then zero observed sector failures from 24 dB upward. This denser scan
+# targets the waterfall gap so fsr-extrapolate can fit the ITI=0.2 curve.
+#
+# Run on the Windows machine:
+#   tdmr2d concat configs/concat_ldpc_1dmtr_highrate_k15_sector_snrscan_iti02_tail.yaml
+experiment:
+  name: highrate_1dmtr_k15_snrscan_iti02_tail_1000sector
+  family: mtr1d
+  seed: 101
+  num_tracks: 40
+  bits_per_track: 2048
+
+code:
+  type: mtr1d
+  block_shape: [16, 1]
+  K1: 15
+  down_mtr: 3
+  boundary_down_mtr: 8
+  boundary_max_checker_run: 8
+
+channel:
+  model: linear_2d_awgn
+  c0: 1.0
+  c_down_prev: 0.15
+  c_down_next: 0.15
+  c_cross_up: 0.20
+  c_cross_down: 0.20
+  snr_db: 23
+  boundary: zero
+
+detector:
+  type: soft_awgn
+  threshold: 0.0
+  llr_clip: 20.0
+
+metrics:
+  target_ber: 1.0e-2
+
+output:
+  dir: outputs/runs
+
+rate_plan:
+  target_total_rate: 0.90
+  sector_bits: 32768
+  sector_count_target: 1000
+  exact_ldpc_rate: false
+  check_codebook: true
+
+channel_metrics:
+  use_ldpc_inner_grid: true
+  sample_frames: 256
+  chunk_tracks: 256
+
+ldpc:
+  n: 1800
+  dv: 3
+  dc: 75
+  construction_seed: 1
+  method: minsum
+  scale: 0.75
+  max_iters: 30
+  sector_bits: 32768
+  sector_count_target: 1000
+  inner_demapper: hard_codebook
+  turbo_iterations: 0
+  turbo_llr_clip: 20.0
+  turbo_damping: 0.0
+  demapper_chunk: 64
+  channel_detector: soft_awgn
+
+sweep:
+  snr_db: [22.0, 22.25, 22.5, 22.75, 23.0, 23.25, 23.5, 23.75, 24.0]
+  iti_coeffs: [0.2]

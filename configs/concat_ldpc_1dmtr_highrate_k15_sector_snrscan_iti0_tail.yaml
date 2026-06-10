@@ -1,0 +1,76 @@
+# Tail refinement for the high-rate 1D-MTR K15 baseline, ITI=0.0.
+#
+# The first coarse 500-sector scan already gives usable points, but the
+# 1e-8...1e-10 extrapolation is more defensible if we thicken the last nonzero
+# FSR region around 16.5--18 dB with an independent seed.
+#
+# Run on the Windows machine:
+#   tdmr2d concat configs/concat_ldpc_1dmtr_highrate_k15_sector_snrscan_iti0_tail.yaml
+experiment:
+  name: highrate_1dmtr_k15_snrscan_iti0_tail_1000sector
+  family: mtr1d
+  seed: 101
+  num_tracks: 40
+  bits_per_track: 2048
+
+code:
+  type: mtr1d
+  block_shape: [16, 1]
+  K1: 15
+  down_mtr: 3
+  boundary_down_mtr: 8
+  boundary_max_checker_run: 8
+
+channel:
+  model: linear_2d_awgn
+  c0: 1.0
+  c_down_prev: 0.15
+  c_down_next: 0.15
+  c_cross_up: 0.0
+  c_cross_down: 0.0
+  snr_db: 17
+  boundary: zero
+
+detector:
+  type: soft_awgn
+  threshold: 0.0
+  llr_clip: 20.0
+
+metrics:
+  target_ber: 1.0e-2
+
+output:
+  dir: outputs/runs
+
+rate_plan:
+  target_total_rate: 0.90
+  sector_bits: 32768
+  sector_count_target: 1000
+  exact_ldpc_rate: false
+  check_codebook: true
+
+channel_metrics:
+  use_ldpc_inner_grid: true
+  sample_frames: 256
+  chunk_tracks: 256
+
+ldpc:
+  n: 1800
+  dv: 3
+  dc: 75
+  construction_seed: 1
+  method: minsum
+  scale: 0.75
+  max_iters: 30
+  sector_bits: 32768
+  sector_count_target: 1000
+  inner_demapper: hard_codebook
+  turbo_iterations: 0
+  turbo_llr_clip: 20.0
+  turbo_damping: 0.0
+  demapper_chunk: 64
+  channel_detector: soft_awgn
+
+sweep:
+  snr_db: [16.0, 16.5, 17.0, 17.5, 18.0, 18.5]
+  iti_coeffs: [0.0]
