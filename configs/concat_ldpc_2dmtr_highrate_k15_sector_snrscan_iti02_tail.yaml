@@ -1,0 +1,78 @@
+# Tail refinement for the high-rate 2D-MTR K15 baseline, nominal ITI=0.2.
+#
+# The current 2D ITI=0.2 extrapolation is visually linear but based on only
+# three fit points. This run adds a denser independent-seed sweep across the
+# measurable 22--24.5 dB waterfall region.
+#
+# Run on the Windows machine:
+#   tdmr2d concat configs/concat_ldpc_2dmtr_highrate_k15_sector_snrscan_iti02_tail.yaml
+experiment:
+  name: highrate_k15_snrscan_iti02_tail_1000sector
+  family: mtr2d_8x2
+  seed: 101
+  num_tracks: 40
+  bits_per_track: 2048
+
+code:
+  type: mtr2d_8x2
+  block_shape: [8, 2]
+  K: 15
+  down_mtr: 3
+  max_checker_run: 1
+  inner_encoder: blockwise
+  boundary_down_mtr: 8
+  boundary_max_checker_run: 8
+
+channel:
+  model: linear_2d_awgn
+  c0: 1.0
+  c_down_prev: 0.15
+  c_down_next: 0.15
+  c_cross_up: 0.20
+  c_cross_down: 0.20
+  snr_db: 23
+  boundary: zero
+
+detector:
+  type: soft_awgn
+  threshold: 0.0
+  llr_clip: 20.0
+
+metrics:
+  target_ber: 1.0e-2
+
+output:
+  dir: outputs/runs
+
+rate_plan:
+  target_total_rate: 0.90
+  sector_bits: 32768
+  sector_count_target: 1000
+  exact_ldpc_rate: false
+  check_codebook: true
+
+channel_metrics:
+  use_ldpc_inner_grid: true
+  sample_frames: 256
+  chunk_tracks: 256
+
+ldpc:
+  n: 1800
+  dv: 3
+  dc: 75
+  construction_seed: 1
+  method: minsum
+  scale: 0.75
+  max_iters: 30
+  sector_bits: 32768
+  sector_count_target: 1000
+  inner_demapper: hard_codebook
+  turbo_iterations: 0
+  turbo_llr_clip: 20.0
+  turbo_damping: 0.0
+  demapper_chunk: 64
+  channel_detector: soft_awgn
+
+sweep:
+  snr_db: [22.0, 22.25, 22.5, 22.75, 23.0, 23.25, 23.5, 23.75, 24.0, 24.25, 24.5]
+  iti_coeffs: [0.2]
