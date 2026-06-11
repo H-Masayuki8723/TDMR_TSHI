@@ -1,0 +1,76 @@
+# Micro detector check for high-rate 2D-MTR K15, nominal ITI=0.2.
+#
+# Purpose:
+#   compare one BCJR/equalizer pass against the two-pass micro run. The goal is
+#   to see whether the improvement already appears with eq_iters=1 before using
+#   the heavier 100-sector BCJR pilot.
+#
+# Run:
+#   tdmr2d concat configs/concat_ldpc_2dmtr_highrate_k15_eqpilot_bcjr1_iti02_micro.yaml
+experiment:
+  name: highrate_k15_eqpilot_bcjr1_iti02_20sector
+  family: mtr2d_8x2
+  seed: 203
+  num_tracks: 40
+  bits_per_track: 2048
+
+code:
+  type: mtr2d_8x2
+  block_shape: [8, 2]
+  K: 15
+  down_mtr: 3
+  max_checker_run: 1
+  inner_encoder: blockwise
+  boundary_down_mtr: 8
+  boundary_max_checker_run: 8
+
+channel:
+  model: linear_2d_awgn
+  c0: 1.0
+  c_down_prev: 0.15
+  c_down_next: 0.15
+  c_cross_up: 0.20
+  c_cross_down: 0.20
+  snr_db: 23
+  boundary: zero
+
+detector:
+  type: soft_awgn
+  threshold: 0.0
+  llr_clip: 30.0
+
+metrics:
+  target_ber: 1.0e-2
+
+output:
+  dir: outputs/runs
+
+rate_plan:
+  target_total_rate: 0.90
+  sector_bits: 32768
+  sector_count_target: 20
+  exact_ldpc_rate: false
+  check_codebook: true
+
+ldpc:
+  n: 1800
+  dv: 3
+  dc: 75
+  construction_seed: 1
+  method: minsum
+  scale: 0.75
+  max_iters: 30
+  sector_bits: 32768
+  sector_count_target: 20
+  inner_demapper: hard_codebook
+  turbo_iterations: 0
+  turbo_llr_clip: 30.0
+  turbo_damping: 0.0
+  demapper_chunk: 64
+  channel_detector: bcjr_2d_equalized
+  equalizer_iterations: 1
+  channel_llr_clip: 30.0
+
+sweep:
+  snr_db: [22.0, 23.0, 24.0]
+  iti_coeffs: [0.2]
