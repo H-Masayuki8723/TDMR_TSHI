@@ -31,6 +31,97 @@ from .detector import make_detector
 from .ldpc import LDPCCode
 
 
+_TAP_FIELDS = ("c0", "c_down_prev", "c_down_next", "c_cross_up", "c_cross_down")
+
+
+def _symmetric_cross_value(taps: channel_mod.ChannelTaps) -> Optional[float]:
+    if math.isclose(float(taps.c_cross_up), float(taps.c_cross_down), rel_tol=0.0, abs_tol=1.0e-15):
+        return float(taps.c_cross_up)
+    return None
+
+
+def _resolve_detector_taps(true_taps: channel_mod.ChannelTaps,
+                           params: Dict) -> Tuple[channel_mod.ChannelTaps, Dict]:
+    """Resolve the channel taps assumed by the LLR detector.
+
+    By default the detector is matched to the true readback channel. Research
+    mismatch runs can override either individual taps via ``ldpc.detector_taps``
+    or both cross-track taps at once via ``ldpc.detector_iti_coeff``.
+    """
+    values = {name: float(getattr(true_taps, name)) for name in _TAP_FIELDS}
+    override_keys = set()
+
+    nested = params.get("detector_taps")
+    if nested is not None:
+        if not isinstance(nested, dict):
+            raise ValueError("ldpc.detector_taps must be a mapping of tap names to values")
+        unknown = set(nested) - set(_TAP_FIELDS)
+        if unknown:
+            raise ValueError(
+                "ldpc.detector_taps unknown key(s): {}; expected {}".format(
+                    sorted(unknown), sorted(_TAP_FIELDS)
+                )
+            )
+        for key, value in nested.items():
+            values[key] = float(value)
+            override_keys.add(key)
+
+    if params.get("detector_iti_coeff") is not None:
+        iti = float(params["detector_iti_coeff"])
+        values["c_cross_up"] = iti
+        values["c_cross_down"] = iti
+        override_keys.update({"c_cross_up", "c_cross_down"})
+
+    for key in _TAP_FIELDS:
+        flat_key = f"detector_{key}"
+        if flat_key in params:
+            values[key] = float(params[flat_key])
+            override_keys.add(key)
+
+    detector_taps = channel_mod.ChannelTaps(**values)
+    matched = all(
+        math.isclose(float(getattr(true_taps, key)), float(getattr(detector_taps, key)),
+                     rel_tol=0.0, abs_tol=1.0e-15)
+        for key in _TAP_FIELDS
+    )
+    true_iti = _symmetric_cross_value(true_taps)
+    detector_iti = _symmetric_cross_value(detector_taps)
+
+    meta = {
+        "detector_tap_source": "true_channel" if not override_keys else "ldpc_override",
+        "detector_taps_matched": bool(matched),
+        "true_iti_coeff": true_iti,
+        "detector_iti_coeff": detector_iti,
+    }
+    for key in _TAP_FIELDS:
+        true_value = float(getattr(true_taps, key))
+        detector_value = float(getattr(detector_taps, key))
+        meta[f"true_tap_{key}"] = true_value
+        meta[f"detector_tap_{key}"] = detector_value
+        meta[f"detector_tap_delta_{key}"] = float(detector_value - true_value)
+    return detector_taps, meta
+
+
+def _detector_iti_values(params: Dict) -> List[Optional[float]]:
+    values = params.get("detector_iti_coeffs")
+    if values is None:
+        return [None]
+    if not isinstance(values, (list, tuple)):
+        raise ValueError("ldpc.detector_iti_coeffs must be a list of numbers or null")
+    if not values:
+        raise ValueError("ldpc.detector_iti_coeffs must not be empty")
+    return [None if v is None else float(v) for v in values]
+
+
+def _params_for_detector_point(params: Dict, detector_iti: Optional[float]) -> Dict:
+    point_params = dict(params)
+    if detector_iti is not None:
+        point_params["detector_iti_coeff"] = float(detector_iti)
+    elif "detector_iti_coeffs" in point_params:
+        point_params.pop("detector_iti_coeff", None)
+    return point_params
+
+
 def _channel_llr_grid(y: np.ndarray, cfg: Config, taps: channel_mod.ChannelTaps,
                       sigma: float, params: Dict) -> Tuple[np.ndarray, Dict]:
     """Build channel-bit LLRs for LDPC/concat tracks.
@@ -40,20 +131,25 @@ def _channel_llr_grid(y: np.ndarray, cfg: Config, taps: channel_mod.ChannelTaps,
     """
     detector_name = str(params.get("channel_detector", "soft_awgn"))
     clip = float(params.get("channel_llr_clip", getattr(cfg.detector, "llr_clip", 20.0)))
+    detector_taps, tap_meta = _resolve_detector_taps(taps, params)
     if detector_name in ("soft_awgn", "memoryless_awgn"):
         detector = make_detector(cfg.detector)
-        llr = detector.soft_llr(y, sigma=sigma, amplitude=taps.c0)
-        return llr, {
+        llr = detector.soft_llr(y, sigma=sigma, amplitude=detector_taps.c0)
+        meta = {
             "channel_detector": "soft_awgn",
             "equalizer_iterations": 0,
             "channel_llr_clip": clip,
         }
+        meta.update(tap_meta)
+        return llr, meta
     if detector_name in ("bcjr_2d_equalized", "bcjr_isi", "bcjr"):
-        return siso_mod.bcjr_2d_equalized_llr(
-            y, taps, sigma=sigma, boundary=cfg.channel.boundary,
+        llr, meta = siso_mod.bcjr_2d_equalized_llr(
+            y, detector_taps, sigma=sigma, boundary=cfg.channel.boundary,
             iterations=int(params.get("equalizer_iterations", 2)),
             llr_clip=clip,
         )
+        meta.update(tap_meta)
+        return llr, meta
     raise ValueError(
         "unknown channel_detector {!r}; expected soft_awgn or bcjr_2d_equalized".format(detector_name)
     )
@@ -716,13 +812,14 @@ def run_ldpc(cfg: Config, ldpc_params: Dict, *, cache_dir: str = "data/codebooks
 
     snrs = list(cfg.sweep.snr_db) if cfg.sweep else [cfg.channel.snr_db]
     itis = list(cfg.sweep.iti_coeffs) if cfg.sweep else [cfg.channel.c_cross_up]
-    points = [(s, i) for s in snrs for i in itis]
-    children = np.random.SeedSequence(cfg.experiment.seed).spawn(len(points))
+    channel_points = [(s, i) for s in snrs for i in itis]
+    detector_itis = _detector_iti_values(ldpc_params)
+    children = np.random.SeedSequence(cfg.experiment.seed).spawn(len(channel_points))
 
     rows: List[Dict] = []
     first_llr_meta: Dict = {}
-    for (snr, iti), ss in zip(points, children):
-        t0 = time.perf_counter()
+    for (snr, iti), ss in zip(channel_points, children):
+        channel_t0 = time.perf_counter()
         rng = np.random.default_rng(ss)
         ch = replace(cfg.channel, c_cross_up=float(iti), c_cross_down=float(iti))
         taps = channel_mod.ChannelTaps.from_config(ch)
@@ -733,52 +830,59 @@ def run_ldpc(cfg: Config, ldpc_params: Dict, *, cache_dir: str = "data/codebooks
         symbols = channel_mod.map_bits_to_symbols(C)
         y = channel_mod.readback(symbols, taps, snr, rng=rng, boundary=ch.boundary)
 
-        llr, llr_meta = _channel_llr_grid(y, cfg, taps, sigma, ldpc_params)
-        if not first_llr_meta:
-            first_llr_meta = dict(llr_meta)
-        raw = (llr >= 0.0).astype(np.uint8)                 # channel detector hard decision
-        pre_ber = float((raw != C).mean())
-        dec = code.decode_llr(llr, max_iters=max_iters, method=method, scale=scale)
-        info_hat = code.info_bits(dec)
+        for det_idx, detector_iti in enumerate(detector_itis):
+            t0 = channel_t0 if len(detector_itis) == 1 and det_idx == 0 else time.perf_counter()
+            point_params = _params_for_detector_point(ldpc_params, detector_iti)
+            llr, llr_meta = _channel_llr_grid(y, cfg, taps, sigma, point_params)
+            if not first_llr_meta:
+                first_llr_meta = dict(llr_meta)
+            raw = (llr >= 0.0).astype(np.uint8)             # channel detector hard decision
+            pre_ber = float((raw != C).mean())
+            dec = code.decode_llr(llr, max_iters=max_iters, method=method, scale=scale)
+            info_hat = code.info_bits(dec)
 
-        info_err = int((info_hat != U).sum())
-        frame_err = int(np.any(info_hat != U, axis=1).sum())
-        num_info = int(U.size)
-        post_ber = info_err / num_info
-        fer = frame_err / num_frames
-        elapsed = time.perf_counter() - t0
+            info_err = int((info_hat != U).sum())
+            frame_err = int(np.any(info_hat != U, axis=1).sum())
+            num_info = int(U.size)
+            post_ber = info_err / num_info
+            fer = frame_err / num_frames
+            elapsed = time.perf_counter() - t0
 
-        row = {
-            "name": cfg.experiment.name,
-            "family": "ldpc",
-            "rate": float(code.rate),
-            "snr_db": snr,
-            "iti_coeff": float(iti),
-            "num_bits": num_info,
-            "bit_errors": info_err,
-            "BER": post_ber,                  # post-ECC information BER
-            "block_errors": frame_err,
-            "block_error_rate": fer,          # frame (message) error rate
-            "seed": cfg.experiment.seed,
-            "runtime_sec": round(elapsed, 6),
-            # --- diagnostics ---
-            "pre_ecc_ber": pre_ber,
-            "n": code.n, "k": code.k, "ldpc_rate": float(code.rate),
-            "num_frames": num_frames, "max_iters": max_iters,
-            "method": method, "scale": scale, "decoder": "ldpc",
-            "sigma": sigma, "boundary": ch.boundary,
-            "target_ber": cfg.metrics.target_ber,
-            "hit_target": bool(post_ber <= cfg.metrics.target_ber),
-        }
-        row.update(llr_meta)
-        row.update(_sector_error_stats(U, info_hat, sector_bits))
-        rows.append(row)
-        if logger is not None:
-            logger.info("ldpc snr=%s iti=%.3f pre_BER=%.3e post_BER=%.3e FER=%.3e t=%.2fs",
-                        str(snr), iti, pre_ber, post_ber, fer, elapsed)
+            row = {
+                "name": cfg.experiment.name,
+                "family": "ldpc",
+                "rate": float(code.rate),
+                "snr_db": snr,
+                "iti_coeff": float(iti),
+                "num_bits": num_info,
+                "bit_errors": info_err,
+                "BER": post_ber,              # post-ECC information BER
+                "block_errors": frame_err,
+                "block_error_rate": fer,      # frame (message) error rate
+                "seed": cfg.experiment.seed,
+                "runtime_sec": round(elapsed, 6),
+                # --- diagnostics ---
+                "pre_ecc_ber": pre_ber,
+                "n": code.n, "k": code.k, "ldpc_rate": float(code.rate),
+                "num_frames": num_frames, "max_iters": max_iters,
+                "method": method, "scale": scale, "decoder": "ldpc",
+                "sigma": sigma, "boundary": ch.boundary,
+                "target_ber": cfg.metrics.target_ber,
+                "hit_target": bool(post_ber <= cfg.metrics.target_ber),
+            }
+            row.update(llr_meta)
+            row.update(_sector_error_stats(U, info_hat, sector_bits))
+            rows.append(row)
+            if logger is not None:
+                logger.info(
+                    "ldpc snr=%s iti=%.3f det_iti=%s pre_BER=%.3e post_BER=%.3e FER=%.3e t=%.2fs",
+                    str(snr), iti, row.get("detector_iti_coeff"), pre_ber, post_ber, fer, elapsed,
+                )
 
     meta = {"n": code.n, "k": code.k, "rate": code.rate, "num_frames": num_frames,
             "max_iters": max_iters, "method": method, "scale": scale}
+    if len(detector_itis) > 1:
+        meta["detector_iti_coeffs"] = detector_itis
     if sector_bits > 0:
         meta.update({
             "sector_bits": sector_bits,
@@ -837,13 +941,15 @@ def run_concatenated(cfg: Config, ldpc_params: Dict, *, cache_dir: str = "data/c
 
     snrs = list(cfg.sweep.snr_db) if cfg.sweep else [cfg.channel.snr_db]
     itis = list(cfg.sweep.iti_coeffs) if cfg.sweep else [cfg.channel.c_cross_up]
-    points = [(s, i) for s in snrs for i in itis]
-    children = np.random.SeedSequence(cfg.experiment.seed).spawn(len(points))
+    channel_points = [(s, i) for s in snrs for i in itis]
+    detector_itis = _detector_iti_values(ldpc_params)
+    children = np.random.SeedSequence(cfg.experiment.seed).spawn(len(channel_points))
 
     rows: List[Dict] = []
     first_inner_meta: Dict = {}
-    for (snr, iti), ss in zip(points, children):
-        t0 = time.perf_counter()
+    first_llr_meta: Dict = {}
+    for (snr, iti), ss in zip(channel_points, children):
+        channel_t0 = time.perf_counter()
         rng = np.random.default_rng(ss)
         ch = replace(cfg.channel, c_cross_up=float(iti), c_cross_down=float(iti))
         taps = channel_mod.ChannelTaps.from_config(ch)
@@ -859,96 +965,103 @@ def run_concatenated(cfg: Config, ldpc_params: Dict, *, cache_dir: str = "data/c
         symbols = channel_mod.map_bits_to_symbols(tx_grid)
         y = channel_mod.readback(symbols, taps, snr, rng=rng, boundary=ch.boundary)
 
-        llr_grid, llr_meta = _channel_llr_grid(y, cfg, taps, sigma, ldpc_params)
-        raw_grid = (llr_grid >= 0.0).astype(np.uint8)
-        inner_channel_ber = float((raw_grid != tx_grid).mean())
-        demap_meta: Dict = {}
-        ldpc_feedback = np.zeros((num_frames, code.n), dtype=np.float64)
-        dec = np.zeros_like(C)
-        pre_outer_ber = 0.0
-        final_ldpc_input_ber = 0.0
-        rounds = turbo_iterations + 1
-        for round_idx in range(rounds):
-            ldpc_llr, demap_meta = concat_mod.decode_inner_llr(
-                llr_grid, cfg, outer_shape=(num_frames, code.n), cache_dir=cache_dir,
-                apriori_llr=ldpc_feedback, extrinsic=True, llr_clip=turbo_llr_clip,
-                chunk=demapper_chunk, inner_demapper=inner_demapper,
-            )
-            hard_in = (ldpc_llr >= 0.0).astype(np.uint8)
-            round_input_ber = float((hard_in != C).mean())
-            if round_idx == 0:
-                pre_outer_ber = round_input_ber
-            final_ldpc_input_ber = round_input_ber
+        for det_idx, detector_iti in enumerate(detector_itis):
+            t0 = channel_t0 if len(detector_itis) == 1 and det_idx == 0 else time.perf_counter()
+            point_params = _params_for_detector_point(ldpc_params, detector_iti)
+            llr_grid, llr_meta = _channel_llr_grid(y, cfg, taps, sigma, point_params)
+            if not first_llr_meta:
+                first_llr_meta = dict(llr_meta)
+            raw_grid = (llr_grid >= 0.0).astype(np.uint8)
+            inner_channel_ber = float((raw_grid != tx_grid).mean())
+            demap_meta: Dict = {}
+            ldpc_feedback = np.zeros((num_frames, code.n), dtype=np.float64)
+            dec = np.zeros_like(C)
+            pre_outer_ber = 0.0
+            final_ldpc_input_ber = 0.0
+            rounds = turbo_iterations + 1
+            for round_idx in range(rounds):
+                ldpc_llr, demap_meta = concat_mod.decode_inner_llr(
+                    llr_grid, cfg, outer_shape=(num_frames, code.n), cache_dir=cache_dir,
+                    apriori_llr=ldpc_feedback, extrinsic=True, llr_clip=turbo_llr_clip,
+                    chunk=demapper_chunk, inner_demapper=inner_demapper,
+                )
+                hard_in = (ldpc_llr >= 0.0).astype(np.uint8)
+                round_input_ber = float((hard_in != C).mean())
+                if round_idx == 0:
+                    pre_outer_ber = round_input_ber
+                final_ldpc_input_ber = round_input_ber
 
-            dec, posterior_llr = code.decode_llr_with_posterior(
-                ldpc_llr, max_iters=max_iters, method=method, scale=scale
-            )
-            if round_idx < rounds - 1:
-                new_feedback = posterior_llr - ldpc_llr
-                if turbo_llr_clip > 0:
-                    new_feedback = np.clip(new_feedback, -turbo_llr_clip, turbo_llr_clip)
-                if turbo_damping:
-                    ldpc_feedback = turbo_damping * ldpc_feedback + (1.0 - turbo_damping) * new_feedback
-                else:
-                    ldpc_feedback = new_feedback
-        info_hat = code.info_bits(dec)
+                dec, posterior_llr = code.decode_llr_with_posterior(
+                    ldpc_llr, max_iters=max_iters, method=method, scale=scale
+                )
+                if round_idx < rounds - 1:
+                    new_feedback = posterior_llr - ldpc_llr
+                    if turbo_llr_clip > 0:
+                        new_feedback = np.clip(new_feedback, -turbo_llr_clip, turbo_llr_clip)
+                    if turbo_damping:
+                        ldpc_feedback = turbo_damping * ldpc_feedback + (1.0 - turbo_damping) * new_feedback
+                    else:
+                        ldpc_feedback = new_feedback
+            info_hat = code.info_bits(dec)
 
-        info_err = int((info_hat != U).sum())
-        frame_err = int(np.any(info_hat != U, axis=1).sum())
-        num_info = int(U.size)
-        post_ber = info_err / num_info
-        fer = frame_err / num_frames
-        elapsed = time.perf_counter() - t0
+            info_err = int((info_hat != U).sum())
+            frame_err = int(np.any(info_hat != U, axis=1).sum())
+            num_info = int(U.size)
+            post_ber = info_err / num_info
+            fer = frame_err / num_frames
+            elapsed = time.perf_counter() - t0
 
-        row = {
-            "name": cfg.experiment.name,
-            "family": f"ldpc+{cfg.experiment.family}",
-            "rate": float(code.rate * inner_meta["inner_rate"]),
-            "snr_db": snr,
-            "iti_coeff": float(iti),
-            "num_bits": num_info,
-            "bit_errors": info_err,
-            "BER": post_ber,
-            "block_errors": frame_err,
-            "block_error_rate": fer,
-            "seed": cfg.experiment.seed,
-            "runtime_sec": round(elapsed, 6),
-            # --- diagnostics ---
-            "pre_ecc_ber": pre_outer_ber,
-            "final_ldpc_input_ber": final_ldpc_input_ber,
-            "inner_channel_ber": inner_channel_ber,
-            "outer_ldpc_rate": float(code.rate),
-            "inner_rate": float(inner_meta["inner_rate"]),
-            "inner_code": inner_meta["inner_code"],
-            "inner_demapper": demap_meta["inner_demapper"],
-            "configured_inner_demapper": inner_demapper,
-            "channel_detector": llr_meta["channel_detector"],
-            "equalizer_iterations": llr_meta["equalizer_iterations"],
-            "channel_llr_clip": llr_meta["channel_llr_clip"],
-            "turbo_iterations": turbo_iterations,
-            "turbo_rounds": rounds,
-            "turbo_llr_clip": turbo_llr_clip,
-            "turbo_damping": turbo_damping,
-            "demapper_chunk": demapper_chunk,
-            "n": code.n, "k": code.k, "num_frames": num_frames,
-            "max_iters": max_iters, "method": method, "scale": scale,
-            "decoder": "ldpc",
-            "sigma": sigma, "boundary": ch.boundary,
-            "target_ber": cfg.metrics.target_ber,
-            "hit_target": bool(post_ber <= cfg.metrics.target_ber),
-        }
-        row.update(_sector_error_stats(U, info_hat, sector_bits))
-        row.update({k: v for k, v in inner_meta.items() if k not in row})
-        row.update({k: v for k, v in transition_meta.items() if k not in row})
-        row.update({k: v for k, v in demap_meta.items() if k not in row})
-        rows.append(row)
-        if logger is not None:
-            logger.info(
-                "concat inner=%s turbo=%d snr=%s iti=%.3f inner_BER=%.3e "
-                "pre_LDPC_BER=%.3e final_LDPC_in_BER=%.3e post_BER=%.3e FER=%.3e t=%.2fs",
-                cfg.experiment.family, turbo_iterations, str(snr), iti, inner_channel_ber,
-                pre_outer_ber, final_ldpc_input_ber, post_ber, fer, elapsed,
-            )
+            row = {
+                "name": cfg.experiment.name,
+                "family": f"ldpc+{cfg.experiment.family}",
+                "rate": float(code.rate * inner_meta["inner_rate"]),
+                "snr_db": snr,
+                "iti_coeff": float(iti),
+                "num_bits": num_info,
+                "bit_errors": info_err,
+                "BER": post_ber,
+                "block_errors": frame_err,
+                "block_error_rate": fer,
+                "seed": cfg.experiment.seed,
+                "runtime_sec": round(elapsed, 6),
+                # --- diagnostics ---
+                "pre_ecc_ber": pre_outer_ber,
+                "final_ldpc_input_ber": final_ldpc_input_ber,
+                "inner_channel_ber": inner_channel_ber,
+                "outer_ldpc_rate": float(code.rate),
+                "inner_rate": float(inner_meta["inner_rate"]),
+                "inner_code": inner_meta["inner_code"],
+                "inner_demapper": demap_meta["inner_demapper"],
+                "configured_inner_demapper": inner_demapper,
+                "channel_detector": llr_meta["channel_detector"],
+                "equalizer_iterations": llr_meta["equalizer_iterations"],
+                "channel_llr_clip": llr_meta["channel_llr_clip"],
+                "turbo_iterations": turbo_iterations,
+                "turbo_rounds": rounds,
+                "turbo_llr_clip": turbo_llr_clip,
+                "turbo_damping": turbo_damping,
+                "demapper_chunk": demapper_chunk,
+                "n": code.n, "k": code.k, "num_frames": num_frames,
+                "max_iters": max_iters, "method": method, "scale": scale,
+                "decoder": "ldpc",
+                "sigma": sigma, "boundary": ch.boundary,
+                "target_ber": cfg.metrics.target_ber,
+                "hit_target": bool(post_ber <= cfg.metrics.target_ber),
+            }
+            row.update({k: v for k, v in llr_meta.items() if k not in row})
+            row.update(_sector_error_stats(U, info_hat, sector_bits))
+            row.update({k: v for k, v in inner_meta.items() if k not in row})
+            row.update({k: v for k, v in transition_meta.items() if k not in row})
+            row.update({k: v for k, v in demap_meta.items() if k not in row})
+            rows.append(row)
+            if logger is not None:
+                logger.info(
+                    "concat inner=%s turbo=%d snr=%s iti=%.3f det_iti=%s inner_BER=%.3e "
+                    "pre_LDPC_BER=%.3e final_LDPC_in_BER=%.3e post_BER=%.3e FER=%.3e t=%.2fs",
+                    cfg.experiment.family, turbo_iterations, str(snr), iti,
+                    row.get("detector_iti_coeff"), inner_channel_ber,
+                    pre_outer_ber, final_ldpc_input_ber, post_ber, fer, elapsed,
+                )
 
     meta = {
         "n": code.n, "k": code.k, "outer_ldpc_rate": code.rate,
@@ -962,6 +1075,8 @@ def run_concatenated(cfg: Config, ldpc_params: Dict, *, cache_dir: str = "data/c
         "demapper_chunk": demapper_chunk,
         "inner_demapper": inner_demapper,
     }
+    if len(detector_itis) > 1:
+        meta["detector_iti_coeffs"] = detector_itis
     if sector_bits > 0:
         meta.update({
             "sector_bits": sector_bits,
@@ -975,6 +1090,7 @@ def run_concatenated(cfg: Config, ldpc_params: Dict, *, cache_dir: str = "data/c
             "equalizer_iterations": rows[0].get("equalizer_iterations"),
             "channel_llr_clip": rows[0].get("channel_llr_clip"),
         })
+        meta.update({k: v for k, v in first_llr_meta.items() if k not in meta})
     return rows, meta
 
 

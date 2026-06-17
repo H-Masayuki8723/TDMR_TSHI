@@ -192,6 +192,31 @@ down-track 3-tap ISI model. This is exact for the down-track ISI channel with
 `boundary: zero` and approximate for the full 2D channel because ITI is cancelled
 rather than jointly trellised over all tracks.
 
+For matched/mismatched detector studies, the true readback taps and the taps
+assumed by the LLR detector can be separated. By default the detector is matched
+to the true channel. In the `ldpc` section, use `detector_taps` for individual
+assumed coefficients or `detector_iti_coeff` to override both cross-track taps:
+
+```yaml
+ldpc:
+  channel_detector: bcjr_2d_equalized
+  equalizer_iterations: 2
+  detector_iti_coeff: 0.15       # true channel may still be c_cross=0.20
+```
+
+For one command that reuses the same transmitted/noisy readback samples across
+several detector assumptions, use:
+
+```yaml
+ldpc:
+  detector_iti_coeffs: [0.15, 0.18, 0.20, 0.22, 0.25]
+```
+
+Result rows record `true_tap_*`, `detector_tap_*`,
+`detector_tap_delta_*`, `true_iti_coeff`, `detector_iti_coeff`, and
+`detector_taps_matched`, so `fsr-extrapolate --group-by detector_iti_coeff`
+can compare under-estimated, matched, and over-estimated detector assumptions.
+
 ### LDPC track — post-ECC BER / FER (`tdmr2d ldpc`)
 
 `ldpc.py` provides a self-contained LDPC code and decoder:
@@ -359,7 +384,8 @@ information BER and `block_error_rate` is FER. Extra columns include
 `inner_channel_ber`, `pre_ecc_ber` (LDPC-input hard BER after inner demapping),
 `final_ldpc_input_ber`, `outer_ldpc_rate`, `inner_rate`, `inner_code`,
 `inner_demapper`, `channel_detector`, `equalizer_iterations`,
-`turbo_iterations`, and `turbo_rounds`.
+`true_tap_*`, `detector_tap_*`, `detector_iti_coeff`,
+`detector_taps_matched`, `turbo_iterations`, and `turbo_rounds`.
 
 ---
 
@@ -407,6 +433,8 @@ rate-optimal constrained code.
   (`channel_detector: bcjr_2d_equalized`).
 - **2D equalizer ahead of detection** — done as soft ITI cancellation feeding
   the BCJR ISI detector.
+- **Matched/mismatched detector tap studies** — done for LDPC/concat runs via
+  `detector_taps`, `detector_iti_coeff`, and `detector_iti_coeffs`.
 - **Full joint 2D BCJR / graph detector** — next: jointly infer neighbouring
   tracks instead of cancelling ITI from soft estimates.
 - **Richer channels**: media/jitter noise, nonlinear transition shift, head

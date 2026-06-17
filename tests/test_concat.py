@@ -8,9 +8,10 @@ from tdmr2d.concat import (decode_inner_llr, encode_inner_grid, indices_to_bits,
                            soft_demapper_llr, trellis_pruned_demapper_llr,
                            trellis_pruned_viterbi_indices)
 from tdmr2d.config import Config
-from tdmr2d.experiments import (run_boundary_scan, run_channel_metrics,
+from tdmr2d.experiments import (_channel_llr_grid, run_boundary_scan, run_channel_metrics,
                                 run_concatenated, run_iti_calibration,
                                 run_rate_plan)
+from tdmr2d.channel import ChannelTaps
 
 
 def _cfg() -> Config:
@@ -252,6 +253,59 @@ def test_concatenated_accepts_bcjr_channel_detector(tmp_path):
     assert rows[0]["equalizer_iterations"] == 1
     assert rows[0]["inner_channel_ber"] == 0.0
     assert rows[0]["BER"] == 0.0
+
+
+def test_channel_llr_grid_reports_detector_tap_mismatch():
+    cfg = _cfg()
+    true_taps = ChannelTaps(c0=1.0, c_down_prev=0.15, c_down_next=0.15,
+                            c_cross_up=0.20, c_cross_down=0.20)
+    y = np.zeros((2, 8), dtype=np.float64)
+
+    _, meta = _channel_llr_grid(
+        y, cfg, true_taps, sigma=0.25,
+        params={
+            "channel_detector": "bcjr_2d_equalized",
+            "equalizer_iterations": 1,
+            "detector_iti_coeff": 0.15,
+        },
+    )
+
+    assert meta["detector_tap_source"] == "ldpc_override"
+    assert meta["detector_taps_matched"] is False
+    assert meta["true_iti_coeff"] == 0.20
+    assert meta["detector_iti_coeff"] == 0.15
+    assert meta["true_tap_c_cross_up"] == 0.20
+    assert meta["detector_tap_c_cross_up"] == 0.15
+    assert np.isclose(meta["detector_tap_delta_c_cross_up"], -0.05)
+
+
+def test_concatenated_can_sweep_detector_iti_coeffs(tmp_path):
+    raw = _cfg().to_dict()
+    raw["channel"].update({
+        "c_cross_up": 0.02,
+        "c_cross_down": 0.02,
+        "snr_db": None,
+    })
+    cfg = Config.from_dict(raw)
+    rows, _ = run_concatenated(
+        cfg,
+        {
+            "n": 60,
+            "dv": 3,
+            "dc": 6,
+            "num_frames": 2,
+            "max_iters": 5,
+            "channel_detector": "bcjr_2d_equalized",
+            "equalizer_iterations": 1,
+            "detector_iti_coeffs": [0.0, 0.05],
+        },
+        cache_dir=tmp_path,
+    )
+
+    assert len(rows) == 2
+    assert [r["detector_iti_coeff"] for r in rows] == [0.0, 0.05]
+    assert all(r["true_iti_coeff"] == 0.02 for r in rows)
+    assert all(r["detector_taps_matched"] is False for r in rows)
 
 
 def test_boundary_scan_reports_density_and_tx_violations(tmp_path):

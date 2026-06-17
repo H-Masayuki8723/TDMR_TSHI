@@ -266,9 +266,15 @@ def cmd_ldpc(args) -> int:
     print(f"\nLDPC n={meta['n']} k={meta['k']} rate={meta['rate']:.3f} "
           f"({meta['method']}, scale={meta['scale']}, max_iters={meta['max_iters']}, "
           f"{meta['num_frames']} frames/pt) -> {run_dir}")
-    for r in sorted(rows, key=lambda r: (r["iti_coeff"], r["snr_db"])):
+    for r in sorted(rows, key=lambda r: (
+        r["iti_coeff"],
+        -1.0 if r.get("detector_iti_coeff") is None else float(r.get("detector_iti_coeff")),
+        r["snr_db"],
+    )):
         fsr = "" if r.get("FSR") is None else f"  FSR={r['FSR']:.3e}"
+        det = "" if r.get("detector_tap_source") == "true_channel" else f"  det_iti={r.get('detector_iti_coeff')}"
         print(f"  snr={r['snr_db']:>4} iti={r['iti_coeff']:.2f}  "
+              f"{det}"
               f"pre-ECC BER={r['pre_ecc_ber']:.3e}  post-ECC BER={r['BER']:.3e}  "
               f"FER={r['block_error_rate']:.3e}{fsr}")
     files = "results.csv / results.json / ldpc_ber_vs_snr.png / ldpc_fer_vs_snr.png"
@@ -304,16 +310,28 @@ def cmd_concat(args) -> int:
         plot_sector_fsr(df, run_dir / "concat_fsr_vs_snr.png")
         fsr_written = True
 
+    detector_tap_note = ""
+    if meta.get("detector_iti_coeffs"):
+        detector_tap_note = f", detector_iti_sweep={meta.get('detector_iti_coeffs')}"
+    elif meta.get("detector_taps_matched") is False:
+        detector_tap_note = f", detector_iti={meta.get('detector_iti_coeff')}"
+
     print(f"\nConcatenated LDPC + {meta['inner_family']} "
           f"(outer n={meta['n']} k={meta['k']} rate={meta['outer_ldpc_rate']:.3f}, "
 	          f"inner rate={meta['inner_rate']:.3f}, total rate={rows[0]['rate']:.3f}, "
 	          f"turbo_iterations={meta.get('turbo_iterations', 0)}, "
 	          f"inner_demapper={meta.get('inner_demapper', 'exact_codebook')}, "
 	          f"channel_detector={meta.get('channel_detector', 'soft_awgn')}, "
-	          f"eq_iters={meta.get('equalizer_iterations', 0)}) -> {run_dir}")
-    for r in sorted(rows, key=lambda r: (r["iti_coeff"], r["snr_db"])):
+	          f"eq_iters={meta.get('equalizer_iterations', 0)}{detector_tap_note}) -> {run_dir}")
+    for r in sorted(rows, key=lambda r: (
+        r["iti_coeff"],
+        -1.0 if r.get("detector_iti_coeff") is None else float(r.get("detector_iti_coeff")),
+        r["snr_db"],
+    )):
         fsr = "" if r.get("FSR") is None else f"  FSR={r['FSR']:.3e}"
+        det = "" if r.get("detector_tap_source") == "true_channel" else f"  det_iti={r.get('detector_iti_coeff')}"
         print(f"  snr={r['snr_db']:>4} iti={r['iti_coeff']:.2f}  "
+              f"{det}"
               f"inner BER={r['inner_channel_ber']:.3e}  "
               f"pre-LDPC BER={r['pre_ecc_ber']:.3e}  "
               f"final-in BER={r.get('final_ldpc_input_ber', r['pre_ecc_ber']):.3e}  "
