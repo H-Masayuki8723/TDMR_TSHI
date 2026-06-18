@@ -274,7 +274,7 @@ def cmd_ldpc(args) -> int:
         fsr = "" if r.get("FSR") is None else f"  FSR={r['FSR']:.3e}"
         det = "" if r.get("detector_tap_source") == "true_channel" else f"  det_iti={r.get('detector_iti_coeff')}"
         print(f"  snr={r['snr_db']:>4} iti={r['iti_coeff']:.2f}  "
-              f"{det}"
+              f"{det}  "
               f"pre-ECC BER={r['pre_ecc_ber']:.3e}  post-ECC BER={r['BER']:.3e}  "
               f"FER={r['block_error_rate']:.3e}{fsr}")
     files = "results.csv / results.json / ldpc_ber_vs_snr.png / ldpc_fer_vs_snr.png"
@@ -331,7 +331,7 @@ def cmd_concat(args) -> int:
         fsr = "" if r.get("FSR") is None else f"  FSR={r['FSR']:.3e}"
         det = "" if r.get("detector_tap_source") == "true_channel" else f"  det_iti={r.get('detector_iti_coeff')}"
         print(f"  snr={r['snr_db']:>4} iti={r['iti_coeff']:.2f}  "
-              f"{det}"
+              f"{det}  "
               f"inner BER={r['inner_channel_ber']:.3e}  "
               f"pre-LDPC BER={r['pre_ecc_ber']:.3e}  "
               f"final-in BER={r.get('final_ldpc_input_ber', r['pre_ecc_ber']):.3e}  "
