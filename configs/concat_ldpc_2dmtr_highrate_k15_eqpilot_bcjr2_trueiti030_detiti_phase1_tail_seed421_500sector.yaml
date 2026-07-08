@@ -1,0 +1,77 @@
+# Phase 1 tail confirmation for true ITI=0.30.
+#
+# Purpose:
+#   Confirm whether detector_iti=0.18 or 0.19 is the robust optimum near the
+#   FSR tail. This run intentionally keeps each chunk at 500 sectors to match
+#   the memory footprint of the already validated 500-sector experiments.
+#
+# Aggregate this with the lowband/compare 500-sector runs and the other Phase 1
+# chunks using the command shown in the handoff response.
+experiment:
+  name: highrate_k15_eqpilot_bcjr2_trueiti030_detiti_phase1_tail_seed421_500sector
+  family: mtr2d_8x2
+  seed: 421
+  num_tracks: 40
+  bits_per_track: 2048
+
+code:
+  type: mtr2d_8x2
+  block_shape: [8, 2]
+  K: 15
+  down_mtr: 3
+  max_checker_run: 1
+  inner_encoder: blockwise
+  boundary_down_mtr: 8
+  boundary_max_checker_run: 8
+
+channel:
+  model: linear_2d_awgn
+  c0: 1.0
+  c_down_prev: 0.15
+  c_down_next: 0.15
+  c_cross_up: 0.30
+  c_cross_down: 0.30
+  snr_db: 18
+  boundary: zero
+
+detector:
+  type: soft_awgn
+  threshold: 0.0
+  llr_clip: 30.0
+
+metrics:
+  target_ber: 1.0e-2
+
+output:
+  dir: outputs/runs
+
+rate_plan:
+  target_total_rate: 0.90
+  sector_bits: 32768
+  sector_count_target: 500
+  exact_ldpc_rate: false
+  check_codebook: true
+
+ldpc:
+  n: 1800
+  dv: 3
+  dc: 75
+  construction_seed: 1
+  method: minsum
+  scale: 0.75
+  max_iters: 30
+  sector_bits: 32768
+  sector_count_target: 500
+  inner_demapper: hard_codebook
+  turbo_iterations: 0
+  turbo_llr_clip: 30.0
+  turbo_damping: 0.0
+  demapper_chunk: 64
+  channel_detector: bcjr_2d_equalized
+  equalizer_iterations: 2
+  channel_llr_clip: 30.0
+  detector_iti_coeffs: [0.18, 0.19]
+
+sweep:
+  snr_db: [17.5, 18.0, 18.5, 19.0, 19.5]
+  iti_coeffs: [0.30]
