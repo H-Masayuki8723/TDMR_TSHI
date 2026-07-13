@@ -1,0 +1,2 @@
+family,inner_encoder,inner_rate,target_total_rate,required_outer_ldpc_rate,dv,dc,n,design_ldpc_checks,design_ldpc_k,design_outer_ldpc_rate,exact_ldpc_k,exact_outer_ldpc_rate,design_total_rate,exact_total_rate,sector_bits,sector_bytes,sector_count_target,frames_per_sector,recommended_num_frames,inner_frame_multiple,codebook_status,codebook_num_valid
+mtr1d,blockwise,0.9375,0.9,0.9600000000000001,3,75,1800,72,1728,0.96,1730,0.9611111111111111,0.8999999999999999,0.9010416666666667,32768,4096.0,1,19,19,1,ok,41138

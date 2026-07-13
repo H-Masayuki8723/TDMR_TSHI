@@ -1,0 +1,7 @@
+channel_detector,equalizer_iterations,fit_model,fit_points,fit_min_snr_db,fit_max_snr_db,fit_min_fsr,fit_max_fsr,slope_log10_fsr_per_db,intercept_log10_fsr,r2_log10_fsr,fit_note,target_fsr,target_log10_fsr,estimated_snr_db,extrapolation_beyond_fit_max_db
+bcjr_2d_equalized,2,log10_fsr_linear_vs_snr,0,,,,,,,,insufficient nonzero/non-saturated FSR points (<2),0.001,-3.0,,
+bcjr_2d_equalized,2,log10_fsr_linear_vs_snr,0,,,,,,,,insufficient nonzero/non-saturated FSR points (<2),0.0001,-4.0,,
+bcjr_2d_equalized,2,log10_fsr_linear_vs_snr,0,,,,,,,,insufficient nonzero/non-saturated FSR points (<2),1e-05,-5.0,,
+soft_awgn,0,log10_fsr_linear_vs_snr,4,22.0,24.0,0.01,0.08,-0.4258264958536345,8.161091401995783,0.9285174238644988,,0.001,-3.0,26.210420231417643,2.2104202314176433
+soft_awgn,0,log10_fsr_linear_vs_snr,4,22.0,24.0,0.01,0.08,-0.4258264958536345,8.161091401995783,0.9285174238644988,,0.0001,-4.0,28.558794533480146,4.558794533480146
+soft_awgn,0,log10_fsr_linear_vs_snr,4,22.0,24.0,0.01,0.08,-0.4258264958536345,8.161091401995783,0.9285174238644988,,1e-05,-5.0,30.90716883554265,6.907168835542649

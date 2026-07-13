@@ -1,0 +1,5 @@
+channel_detector,equalizer_iterations,snr_db,sector_errors,sector_count,bit_errors,num_bits,runtime_sec,FSR,BER,FSR_upper_95_zero_fail
+soft_awgn,0,22.0,8,100,40,3280080,56.518244,0.08,1.2194824516475208e-05,
+soft_awgn,0,22.5,3,100,25,3280080,28.518687,0.03,7.621765322797005e-06,
+soft_awgn,0,23.0,2,100,9,3280080,20.991447,0.02,2.7438355162069216e-06,
+soft_awgn,0,24.0,1,100,6,3280080,14.623241,0.01,1.829223677471281e-06,
