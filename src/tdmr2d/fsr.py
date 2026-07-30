@@ -241,7 +241,13 @@ def select_best_detector_map(
     best_idx = valid.groupby(keys, dropna=False)["estimated_snr_db"].idxmin()
     best = valid.loc[best_idx].copy()
 
-    search_bounds = valid.groupby(keys, as_index=False, dropna=False).agg(
+    # Search boundaries must include candidates whose FSR fit failed. Otherwise
+    # a valid interior tap can be mislabeled as a boundary optimum merely
+    # because lower/higher candidates produced no finite extrapolation.
+    searched = work.dropna(
+        subset=[true_iti_col, detector_iti_col, "target_fsr"]
+    )
+    search_bounds = searched.groupby(keys, as_index=False, dropna=False).agg(
         detector_search_min=(detector_iti_col, "min"),
         detector_search_max=(detector_iti_col, "max"),
         detector_candidates=(detector_iti_col, "nunique"),

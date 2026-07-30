@@ -73,6 +73,8 @@ def test_select_best_detector_map_reports_matched_gain_and_search_boundary():
          "estimated_snr_db": 22.0, "fit_min_fsr": 1e-2},
         {"iti_coeff": 0.35, "detector_iti_coeff": 0.04, "target_fsr": 1e-3,
          "estimated_snr_db": 22.2, "fit_min_fsr": 1e-2},
+        {"iti_coeff": 0.35, "detector_iti_coeff": 0.00, "target_fsr": 1e-3,
+         "estimated_snr_db": float("nan"), "fit_min_fsr": float("nan")},
     ])
 
     best = select_best_detector_map(targets)
@@ -85,5 +87,6 @@ def test_select_best_detector_map_reports_matched_gain_and_search_boundary():
     assert not row_020["best_at_lower_boundary"]
     assert row_035["detector_iti_coeff"] == 0.02
     assert not row_035["matched_available"]
-    assert row_035["best_at_lower_boundary"]
+    assert not row_035["best_at_lower_boundary"]
+    assert row_035["detector_search_min"] == 0.0
     assert row_035["extrapolation_decades_below_observed_min"] == 1.0

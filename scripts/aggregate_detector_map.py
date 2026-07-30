@@ -137,6 +137,9 @@ def main() -> int:
         f"Detector-map aggregation: {len(raw)} raw rows, "
         f"{raw['name'].nunique() if 'name' in raw.columns else '?'} experiment name(s)"
     )
+    print()
+    print(manifest.to_string(index=False))
+    print()
     print(f"  manifest: {manifest_path}")
     print(f"  aggregate: {aggregate_path}")
     print(f"  target SNR: {target_path}")
