@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from tdmr2d.fsr import aggregate_fsr, extrapolate_fsr_targets, load_fsr_rows
+from tdmr2d.fsr import (
+    aggregate_fsr,
+    extrapolate_fsr_targets,
+    load_fsr_rows,
+    select_best_detector_map,
+)
 
 
 def test_fsr_aggregate_and_extrapolate_targets(tmp_path):
@@ -54,3 +59,31 @@ def test_fsr_fit_reports_insufficient_points():
     assert fit_points.empty
     assert targets["estimated_snr_db"].isna().all()
     assert "insufficient" in targets["fit_note"].iloc[0]
+
+
+def test_select_best_detector_map_reports_matched_gain_and_search_boundary():
+    targets = pd.DataFrame([
+        {"iti_coeff": 0.20, "detector_iti_coeff": 0.17, "target_fsr": 1e-3,
+         "estimated_snr_db": 14.8, "fit_min_fsr": 2e-3},
+        {"iti_coeff": 0.20, "detector_iti_coeff": 0.18, "target_fsr": 1e-3,
+         "estimated_snr_db": 14.6, "fit_min_fsr": 2e-3},
+        {"iti_coeff": 0.20, "detector_iti_coeff": 0.20, "target_fsr": 1e-3,
+         "estimated_snr_db": 15.1, "fit_min_fsr": 2e-3},
+        {"iti_coeff": 0.35, "detector_iti_coeff": 0.02, "target_fsr": 1e-3,
+         "estimated_snr_db": 22.0, "fit_min_fsr": 1e-2},
+        {"iti_coeff": 0.35, "detector_iti_coeff": 0.04, "target_fsr": 1e-3,
+         "estimated_snr_db": 22.2, "fit_min_fsr": 1e-2},
+    ])
+
+    best = select_best_detector_map(targets)
+    row_020 = best[best["iti_coeff"] == 0.20].iloc[0]
+    row_035 = best[best["iti_coeff"] == 0.35].iloc[0]
+
+    assert row_020["detector_iti_coeff"] == 0.18
+    assert row_020["matched_available"]
+    assert abs(row_020["gain_vs_matched_db"] - 0.5) < 1e-12
+    assert not row_020["best_at_lower_boundary"]
+    assert row_035["detector_iti_coeff"] == 0.02
+    assert not row_035["matched_available"]
+    assert row_035["best_at_lower_boundary"]
+    assert row_035["extrapolation_decades_below_observed_min"] == 1.0

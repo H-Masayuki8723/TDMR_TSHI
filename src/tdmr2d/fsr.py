@@ -204,6 +204,76 @@ def extrapolate_fsr_targets(agg: pd.DataFrame, group_cols: Sequence[str],
     return pd.DataFrame(rows), pd.concat(fit_points, ignore_index=True) if fit_points else pd.DataFrame()
 
 
+def select_best_detector_map(
+    targets_df: pd.DataFrame,
+    *,
+    true_iti_col: str = "iti_coeff",
+    detector_iti_col: str = "detector_iti_coeff",
+) -> pd.DataFrame:
+    """Select the minimum-required-SNR detector tap for each true ITI/target.
+
+    The returned rows retain the fit diagnostics, add the matched-detector SNR
+    and gain, and explicitly flag optima that lie on the searched tap boundary.
+    A missing matched point is represented by ``matched_available=False`` and
+    NaN gain; it is not treated as an error.
+    """
+
+    required = {
+        true_iti_col,
+        detector_iti_col,
+        "target_fsr",
+        "estimated_snr_db",
+    }
+    missing = sorted(required - set(targets_df.columns))
+    if missing:
+        raise ValueError(f"target rows missing required column(s): {missing}")
+
+    work = targets_df.copy()
+    for col in (true_iti_col, detector_iti_col, "target_fsr", "estimated_snr_db"):
+        work[col] = pd.to_numeric(work[col], errors="coerce")
+    valid = work.dropna(
+        subset=[true_iti_col, detector_iti_col, "target_fsr", "estimated_snr_db"]
+    ).copy()
+    if valid.empty:
+        return pd.DataFrame()
+
+    keys = [true_iti_col, "target_fsr"]
+    best_idx = valid.groupby(keys, dropna=False)["estimated_snr_db"].idxmin()
+    best = valid.loc[best_idx].copy()
+
+    search_bounds = valid.groupby(keys, as_index=False, dropna=False).agg(
+        detector_search_min=(detector_iti_col, "min"),
+        detector_search_max=(detector_iti_col, "max"),
+        detector_candidates=(detector_iti_col, "nunique"),
+    )
+    best = best.merge(search_bounds, on=keys, how="left")
+    best["best_at_lower_boundary"] = np.isclose(
+        best[detector_iti_col], best["detector_search_min"]
+    )
+    best["best_at_upper_boundary"] = np.isclose(
+        best[detector_iti_col], best["detector_search_max"]
+    )
+
+    matched = valid[
+        np.isclose(valid[true_iti_col], valid[detector_iti_col])
+    ][keys + ["estimated_snr_db"]].rename(
+        columns={"estimated_snr_db": "matched_snr_db"}
+    )
+    matched = matched.drop_duplicates(keys, keep="first")
+    best = best.merge(matched, on=keys, how="left")
+    best["matched_available"] = best["matched_snr_db"].notna()
+    best["gain_vs_matched_db"] = best["matched_snr_db"] - best["estimated_snr_db"]
+
+    if "fit_min_fsr" in best.columns:
+        fit_min = pd.to_numeric(best["fit_min_fsr"], errors="coerce")
+        target = pd.to_numeric(best["target_fsr"], errors="coerce")
+        best["extrapolation_decades_below_observed_min"] = np.maximum(
+            0.0, np.log10(fit_min / target)
+        )
+
+    return best.sort_values(keys, ascending=[True, False]).reset_index(drop=True)
+
+
 def plot_fsr_extrapolation(agg: pd.DataFrame, targets_df: pd.DataFrame,
                            group_cols: Sequence[str], path: str | Path) -> Path:
     """Plot measured FSR points and fitted target crossings."""
