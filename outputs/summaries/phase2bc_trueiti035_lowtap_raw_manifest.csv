@@ -1,0 +1,3 @@
+name,source_files,raw_rows,seed,iti_coeff,sector_count_sum
+highrate_k15_eqpilot_bcjr2_phase2b_trueiti035_lowtap_pilot_seed601_100sector,1,36,601,0.35,3600
+highrate_k15_eqpilot_bcjr2_phase2c_trueiti035_lowtap_extension_seed602_100sector,1,36,602,0.35,3600

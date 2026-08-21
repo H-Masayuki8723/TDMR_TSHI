@@ -1,0 +1,30 @@
+{
+  "name_filter": "phase2b_trueiti035|phase2c_trueiti035",
+  "raw_rows": 72,
+  "experiment_names": 2,
+  "aggregate_rows": 60,
+  "fit_point_rows": 24,
+  "target_rows": 30,
+  "best_rows": 3,
+  "duplicate_experiment_names": [],
+  "group_by": [
+    "iti_coeff",
+    "detector_iti_coeff"
+  ],
+  "targets": [
+    0.01,
+    0.001,
+    0.0001
+  ],
+  "max_fit_fsr": 0.3,
+  "min_fit_fsr": 0.0,
+  "min_points": 3,
+  "files": {
+    "manifest": "outputs/summaries/phase2bc_trueiti035_lowtap_raw_manifest.csv",
+    "aggregate": "outputs/summaries/phase2bc_trueiti035_lowtap_aggregate.csv",
+    "fit_points": "outputs/summaries/phase2bc_trueiti035_lowtap_fit_points.csv",
+    "target_snr": "outputs/summaries/phase2bc_trueiti035_lowtap_target_snr.csv",
+    "best_detector_map": "outputs/summaries/phase2bc_trueiti035_lowtap_best_detector_map.csv",
+    "plot": "outputs/summaries/phase2bc_trueiti035_lowtap.png"
+  }
+}
