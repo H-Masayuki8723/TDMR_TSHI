@@ -15,7 +15,7 @@ import copy
 import math
 import time
 from dataclasses import replace
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -897,7 +897,8 @@ def run_ldpc(cfg: Config, ldpc_params: Dict, *, cache_dir: str = "data/codebooks
 # Concatenated LDPC + constrained modulation evaluation                        #
 # --------------------------------------------------------------------------- #
 def run_concatenated(cfg: Config, ldpc_params: Dict, *, cache_dir: str = "data/codebooks",
-                     logger=None) -> Tuple[List[Dict], Dict]:
+                     logger=None, result_callback: Optional[Callable[[Dict], None]] = None
+                     ) -> Tuple[List[Dict], Dict]:
     """Evaluate outer LDPC with the configured inner modulation/constrained code.
 
     The inner layer can be ``uncoded``, ``mtr1d``, or ``mtr2d_8x2``. Constrained
@@ -906,6 +907,8 @@ def run_concatenated(cfg: Config, ldpc_params: Dict, *, cache_dir: str = "data/c
     fed back as a-priori information to the inner demapper for additional SISO
     iterations. The reported ``pre_ecc_ber`` remains the initial LDPC-input BER
     before feedback; ``final_ldpc_input_ber`` records the final demapper output.
+    ``result_callback`` receives each completed point before the next detector
+    runs, allowing a caller to checkpoint without changing the RNG stream.
     """
     code = LDPCCode.gallager(
         n=int(ldpc_params.get("n", 280)),
@@ -1054,6 +1057,8 @@ def run_concatenated(cfg: Config, ldpc_params: Dict, *, cache_dir: str = "data/c
             row.update({k: v for k, v in transition_meta.items() if k not in row})
             row.update({k: v for k, v in demap_meta.items() if k not in row})
             rows.append(row)
+            if result_callback is not None:
+                result_callback(dict(row))
             if logger is not None:
                 logger.info(
                     "concat inner=%s turbo=%d snr=%s iti=%.3f det_iti=%s inner_BER=%.3e "

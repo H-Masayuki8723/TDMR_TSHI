@@ -12,6 +12,8 @@ outputs/runs/*
 outputs/summaries/*
 outputs/figures/*
 outputs/reports/*
+outputs/tap_search/*
+outputs/qa_phase2d/*
 !outputs/**/.gitkeep
 
 # Generated codebook cache (rebuilt deterministically on demand)

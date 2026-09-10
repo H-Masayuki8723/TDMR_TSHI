@@ -448,6 +448,17 @@ rate-optimal constrained code.
 
 ## 12. Testing
 
+For the restartable, memory-bounded Phase 2D detector-tap campaign, see
+[the Japanese run guide](docs/phase2d_tap_search_ja.md). Prepare or run it with:
+
+```bash
+python scripts/run_tap_search.py configs/phase2d_trueiti035_tap_search.yaml --prepare-only
+python -u scripts/run_tap_search.py configs/phase2d_trueiti035_tap_search.yaml
+```
+
+This is a long fixed-design experiment, not a quick test. It saves each tap,
+uses paired channel samples, and reports balanced intermediate summaries.
+
 ```bash
 pip install -e ".[dev]"
 pytest                     # or: docker compose run --rm sim pytest
