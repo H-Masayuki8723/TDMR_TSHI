@@ -1,0 +1,142 @@
+{
+  "environment": {
+    "numpy": "2.4.6",
+    "pandas": "3.0.3",
+    "python": "3.12.3",
+    "pyyaml": "6.0.3"
+  },
+  "fingerprint": "03bf7f54968bc6d623ef4e619d60d89c86fa6f780a2cef0f913abacaebd950f0",
+  "implementation_sha256": "009a702f0f76a6d73e2d61161d1bc77a7310418985ec639bc636fc0a39f57cd9",
+  "plan": {
+    "base": {
+      "channel": {
+        "boundary": "zero",
+        "c0": 1.0,
+        "c_cross_down": 0.35,
+        "c_cross_up": 0.35,
+        "c_down_next": 0.15,
+        "c_down_prev": 0.15,
+        "model": "linear_2d_awgn",
+        "snr_db": 20
+      },
+      "code": {
+        "K": 15,
+        "block_shape": [
+          8,
+          2
+        ],
+        "boundary_down_mtr": 8,
+        "boundary_max_checker_run": 8,
+        "down_mtr": 3,
+        "inner_encoder": "blockwise",
+        "max_checker_run": 1,
+        "type": "mtr2d_8x2"
+      },
+      "detector": {
+        "llr_clip": 30.0,
+        "threshold": 0.0,
+        "type": "soft_awgn"
+      },
+      "experiment": {
+        "bits_per_track": 2048,
+        "family": "mtr2d_8x2",
+        "name": "highrate_k15_eqpilot_bcjr2_phase2c_trueiti035_lowtap_extension_seed602_100sector",
+        "num_tracks": 40,
+        "seed": 602
+      },
+      "metrics": {
+        "target_ber": 0.01
+      },
+      "output": {
+        "dir": "outputs/runs"
+      },
+      "sweep": {
+        "iti_coeffs": [
+          0.35
+        ],
+        "snr_db": [
+          18.0,
+          19.0,
+          20.0,
+          21.0,
+          22.0,
+          23.0
+        ]
+      }
+    },
+    "bootstrap_replicates": 2000,
+    "chunks": 100,
+    "detector_taps": [
+      0.06,
+      0.08,
+      0.09,
+      0.1,
+      0.11,
+      0.12,
+      0.13,
+      0.14,
+      0.15,
+      0.16,
+      0.18,
+      0.2,
+      0.25,
+      0.35
+    ],
+    "ldpc": {
+      "channel_detector": "bcjr_2d_equalized",
+      "channel_llr_clip": 30.0,
+      "construction_seed": 1,
+      "dc": 75,
+      "demapper_chunk": 64,
+      "detector_iti_coeffs": [
+        0.06,
+        0.08,
+        0.09,
+        0.1,
+        0.11,
+        0.12,
+        0.13,
+        0.14,
+        0.15,
+        0.16,
+        0.18,
+        0.2,
+        0.25,
+        0.35
+      ],
+      "dv": 3,
+      "equalizer_iterations": 2,
+      "inner_demapper": "hard_codebook",
+      "max_iters": 30,
+      "method": "minsum",
+      "n": 1800,
+      "scale": 0.75,
+      "sector_bits": 32768,
+      "sector_count_target": 100,
+      "turbo_damping": 0.0,
+      "turbo_iterations": 0,
+      "turbo_llr_clip": 30.0
+    },
+    "master_seed": 260910,
+    "name": "phase2d_trueiti035_tap_search_v1",
+    "reference_tap": 0.1,
+    "sectors_per_chunk": 100,
+    "snr_db": [
+      18.0,
+      19.0,
+      20.0,
+      21.0,
+      22.0,
+      23.0,
+      24.0
+    ],
+    "summary_every_chunks": 5,
+    "targets": [
+      0.0001,
+      0.001,
+      0.01
+    ],
+    "true_iti": 0.35
+  },
+  "schema": 1
+}

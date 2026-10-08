@@ -1,0 +1,7 @@
+{
+  "source": "/home/m-hanabusa/work/TDMR_TSHI/outputs/tap_search/phase2d_trueiti035_tap_search_v1",
+  "completed_chunks_exported": 20,
+  "checkpoint_count": 1960,
+  "sectors_per_condition": 2000,
+  "code_commit": "79f4579388eccdc17546aad10bfa138ecaeb0922"
+}
