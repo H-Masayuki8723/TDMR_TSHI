@@ -1,0 +1,8 @@
+{
+  "balanced_sectors_per_point": 4000,
+  "complete": false,
+  "complete_chunks": 40,
+  "inference": "Fixed-SNR paired chunk bootstrap; pointwise exploratory intervals, not simultaneous/global-optimum proof.",
+  "planned_chunks": 100,
+  "saved_points": 3920
+}
